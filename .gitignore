@@ -1,0 +1,66 @@
+# ======================================
+# C++ 编译输出 / 可执行文件
+# ======================================
+*.o
+*.obj
+*.so
+*.so.*
+*.a
+*.lib
+*.dll
+*.dylib
+*.exe
+*.out
+*.bin
+*.elf
+
+# ======================================
+# CMake 生成文件
+# ======================================
+CMakeLists.txt.user
+CMakeCache.txt
+CMakeFiles
+CMakeScripts
+Testing
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps
+build/
+build-*/
+out/
+build-debug/
+build-release/
+
+# ======================================
+# 测试相关
+# ======================================
+tests/*_test
+tests/*.log
+tests/*.xml
+
+# ======================================
+# IDE / 编辑器配置
+# ======================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+*.user
+*.bak
+.codex
+
+# ======================================
+# 日志 / 临时文件
+# ======================================
+*.log
+*.tmp
+*.temp
+core
+core.*
+vgcore.*
+
