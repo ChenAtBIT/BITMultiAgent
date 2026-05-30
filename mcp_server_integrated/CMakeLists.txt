@@ -47,6 +47,7 @@ if(WIN32)
     # Windows Sockets library is required on Windows
     target_link_libraries(${PROJECT_NAME} PRIVATE ws2_32)
 else()
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${CMAKE_DL_LIBS})
     # On POSIX systems (Linux, macOS), standard socket functions are
     # typically part of the standard C library (libc) and usually
     # don't require explicit linking.

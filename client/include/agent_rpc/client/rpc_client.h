@@ -146,7 +146,7 @@ private:
     std::atomic<bool> connected_{false};
     
     std::shared_ptr<grpc::Channel> channel_;
-    std::unique_ptr<grpc::TemplatedGenericStub<grpc::ByteBuffer, grpc::ByteBuffer>> stub_;
+    std::unique_ptr<grpc::GenericStub> stub_;
     std::unique_ptr<agent_communication::AgentCommunicationService::Stub> agent_stub_;
     
     common::MessageHandler message_handler_;

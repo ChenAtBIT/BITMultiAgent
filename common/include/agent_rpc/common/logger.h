@@ -110,7 +110,8 @@ public:
 
 private:
     bool use_color_;
-    LogFormatter formatter_;
+    LogFormatter color_formatter_{true};
+    LogFormatter plain_formatter_{false};
     std::mutex output_mutex_;
 };
 

@@ -7,6 +7,14 @@
 namespace agent_rpc {
 namespace common {
 
+namespace {
+
+std::string statusToString(const google::protobuf::util::Status& status) {
+    return status.ToString();
+}
+
+} // namespace
+
 // ProtobufBinarySerializer 实现
 std::string ProtobufBinarySerializer::serialize(const google::protobuf::Message& message) {
     std::string data;
@@ -33,7 +41,7 @@ std::string ProtobufBinarySerializer::serializeToJson(const google::protobuf::Me
     
     auto status = google::protobuf::util::MessageToJsonString(message, &json, options);
     if (!status.ok()) {
-        LOG_ERROR("Failed to serialize protobuf message to JSON: " + status.message().as_string());
+        LOG_ERROR("Failed to serialize protobuf message to JSON: " + statusToString(status));
         return "";
     }
     return json;
@@ -42,11 +50,10 @@ std::string ProtobufBinarySerializer::serializeToJson(const google::protobuf::Me
 bool ProtobufBinarySerializer::deserializeFromJson(const std::string& json, google::protobuf::Message& message) {
     google::protobuf::util::JsonParseOptions options;
     options.ignore_unknown_fields = true;
-    options.case_insensitive_enum_parsing = true;
     
     auto status = google::protobuf::util::JsonStringToMessage(json, &message, options);
     if (!status.ok()) {
-        LOG_ERROR("Failed to deserialize JSON to protobuf message: " + status.message().as_string());
+        LOG_ERROR("Failed to deserialize JSON to protobuf message: " + statusToString(status));
         return false;
     }
     return true;
@@ -71,7 +78,7 @@ std::string ProtobufJsonSerializer::serializeToJson(const google::protobuf::Mess
     
     auto status = google::protobuf::util::MessageToJsonString(message, &json, options);
     if (!status.ok()) {
-        LOG_ERROR("Failed to serialize protobuf message to JSON: " + status.message().as_string());
+        LOG_ERROR("Failed to serialize protobuf message to JSON: " + statusToString(status));
         return "";
     }
     return json;
@@ -80,11 +87,10 @@ std::string ProtobufJsonSerializer::serializeToJson(const google::protobuf::Mess
 bool ProtobufJsonSerializer::deserializeFromJson(const std::string& json, google::protobuf::Message& message) {
     google::protobuf::util::JsonParseOptions options;
     options.ignore_unknown_fields = true;
-    options.case_insensitive_enum_parsing = true;
     
     auto status = google::protobuf::util::JsonStringToMessage(json, &message, options);
     if (!status.ok()) {
-        LOG_ERROR("Failed to deserialize JSON to protobuf message: " + status.message().as_string());
+        LOG_ERROR("Failed to deserialize JSON to protobuf message: " + statusToString(status));
         return false;
     }
     return true;

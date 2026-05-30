@@ -29,7 +29,8 @@
 
 namespace vx::transport {
 
-    HttpStream::HttpStream(int port, std::string host) : port_(port), host_(std::move(host)) {
+    HttpStream::HttpStream(int port, std::string host)
+        : port_(port), host_(std::move(host)), server_(std::make_unique<httplib::Server>()) {
         SetupRoutes();
     }
 
@@ -75,9 +76,13 @@ namespace vx::transport {
     }
 
     void HttpStream::Write(const std::string& data) {
+        (void)data;
     }
 
     std::future<void> HttpStream::WriteAsync(const std::string &json_data) {
+        return std::async(std::launch::async, [this, json_data]() {
+            Write(json_data);
+        });
     }
 
     std::pair<size_t, std::string> HttpStream::Read() {
@@ -85,6 +90,9 @@ namespace vx::transport {
     }
 
     std::future<std::pair<size_t, std::string>> HttpStream::ReadAsync() {
+        return std::async(std::launch::async, [this]() {
+            return Read();
+        });
     }
 
     void HttpStream::SetupRoutes() {

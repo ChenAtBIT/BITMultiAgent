@@ -63,4 +63,4 @@ tests/*.xml
 core
 core.*
 vgcore.*
-
+examples/ai_orchestrator/pids

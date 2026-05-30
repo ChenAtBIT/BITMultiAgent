@@ -1,3 +1,34 @@
+# 优先使用与 pkg-config 发现的 protobuf / gRPC 同前缀下的工具，
+# 避免 shell PATH（例如 Conda）中的 protoc 与系统头文件版本不一致。
+if(DEFINED PROTOBUF_PREFIX AND EXISTS "${PROTOBUF_PREFIX}/bin/protoc")
+    set(PROTOC_EXECUTABLE "${PROTOBUF_PREFIX}/bin/protoc")
+else()
+    find_program(PROTOC_EXECUTABLE NAMES protoc REQUIRED)
+endif()
+
+if(DEFINED GRPC_PREFIX AND EXISTS "${GRPC_PREFIX}/bin/grpc_cpp_plugin")
+    set(GRPC_CPP_PLUGIN_EXECUTABLE "${GRPC_PREFIX}/bin/grpc_cpp_plugin")
+else()
+    find_program(GRPC_CPP_PLUGIN_EXECUTABLE NAMES grpc_cpp_plugin REQUIRED)
+endif()
+
+execute_process(
+    COMMAND "${PROTOC_EXECUTABLE}" --version
+    OUTPUT_VARIABLE PROTOC_VERSION_RAW
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+string(REGEX REPLACE "^libprotoc " "" PROTOC_VERSION "${PROTOC_VERSION_RAW}")
+
+if(DEFINED PROTOBUF_VERSION AND NOT PROTOC_VERSION VERSION_EQUAL PROTOBUF_VERSION)
+    message(WARNING
+        "protoc version (${PROTOC_VERSION}) does not match protobuf library version "
+        "(${PROTOBUF_VERSION}). Generated sources may be incompatible."
+    )
+endif()
+
+message(STATUS "Using protoc: ${PROTOC_EXECUTABLE} (${PROTOC_VERSION_RAW})")
+message(STATUS "Using grpc_cpp_plugin: ${GRPC_CPP_PLUGIN_EXECUTABLE}")
+
 # 生成protobuf和gRPC代码
 set(PROTO_FILES
     common.proto
@@ -12,7 +43,7 @@ foreach(PROTO_FILE ${PROTO_FILES})
     add_custom_command(
         OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${PROTO_NAME}.pb.cc
                ${CMAKE_CURRENT_BINARY_DIR}/${PROTO_NAME}.pb.h
-        COMMAND protoc
+        COMMAND "${PROTOC_EXECUTABLE}"
         ARGS --cpp_out=${CMAKE_CURRENT_BINARY_DIR}
              --proto_path=${CMAKE_CURRENT_SOURCE_DIR}
              ${CMAKE_CURRENT_SOURCE_DIR}/${PROTO_FILE}
@@ -24,9 +55,9 @@ foreach(PROTO_FILE ${PROTO_FILES})
     add_custom_command(
         OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${PROTO_NAME}.grpc.pb.cc
                ${CMAKE_CURRENT_BINARY_DIR}/${PROTO_NAME}.grpc.pb.h
-        COMMAND protoc
+        COMMAND "${PROTOC_EXECUTABLE}"
         ARGS --grpc_out=${CMAKE_CURRENT_BINARY_DIR}
-             --plugin=protoc-gen-grpc=/usr/bin/grpc_cpp_plugin
+             --plugin=protoc-gen-grpc=${GRPC_CPP_PLUGIN_EXECUTABLE}
              --proto_path=${CMAKE_CURRENT_SOURCE_DIR}
              ${CMAKE_CURRENT_SOURCE_DIR}/${PROTO_FILE}
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${PROTO_FILE}

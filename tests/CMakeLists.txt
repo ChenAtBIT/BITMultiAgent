@@ -1,5 +1,13 @@
-# 查找Google Test
-find_package(GTest REQUIRED)
+# Google Test targets are prepared in the root CMakeLists.txt.
+
+if(NOT TARGET rapidcheck)
+    find_package(rapidcheck REQUIRED)
+endif()
+
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+if(EXISTS "/usr/local/include")
+    include_directories(/usr/local/include)
+endif()
 
 add_executable(test_rpc_framework test_rpc_framework.cpp)
 target_link_libraries(test_rpc_framework
@@ -58,7 +66,6 @@ add_test(NAME A2AIntegrationTest COMMAND test_a2a_integration)
 # Proto序列化往返属性测试
 # **Feature: a2a-integration, Property 11: Protobuf Serialization Round-Trip**
 # **Validates: Requirements 11.5**
-find_package(rapidcheck REQUIRED)
 
 add_executable(test_proto_roundtrip test_proto_roundtrip.cpp)
 

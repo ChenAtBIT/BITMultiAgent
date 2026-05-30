@@ -12,7 +12,27 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(GRPC REQUIRED grpc++)
 pkg_check_modules(PROTOBUF REQUIRED protobuf)
 pkg_check_modules(JSONCPP REQUIRED jsoncpp)
-find_package(GTest REQUIRED)
+
+if(EXISTS "/usr/lib/x86_64-linux-gnu/libgtest.a" AND EXISTS "/usr/lib/x86_64-linux-gnu/libgtest_main.a")
+    if(NOT TARGET GTest::gtest)
+        add_library(GTest::gtest STATIC IMPORTED GLOBAL)
+        set_target_properties(GTest::gtest PROPERTIES
+            IMPORTED_LOCATION "/usr/lib/x86_64-linux-gnu/libgtest.a"
+            INTERFACE_INCLUDE_DIRECTORIES "/usr/include"
+        )
+    endif()
+
+    if(NOT TARGET GTest::gtest_main)
+        add_library(GTest::gtest_main STATIC IMPORTED GLOBAL)
+        set_target_properties(GTest::gtest_main PROPERTIES
+            IMPORTED_LOCATION "/usr/lib/x86_64-linux-gnu/libgtest_main.a"
+            INTERFACE_INCLUDE_DIRECTORIES "/usr/include"
+            INTERFACE_LINK_LIBRARIES "GTest::gtest"
+        )
+    endif()
+else()
+    find_package(GTest REQUIRED)
+endif()
 
 # 包含目录
 include_directories(${GRPC_INCLUDE_DIRS})

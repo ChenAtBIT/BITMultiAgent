@@ -611,7 +611,7 @@ void RpcClient::setupChannel() {
         throw std::runtime_error("Timed out connecting to " + server_address_);
     }
 
-    stub_ = std::make_unique<grpc::TemplatedGenericStub<grpc::ByteBuffer, grpc::ByteBuffer>>(channel_);
+    stub_ = std::make_unique<grpc::GenericStub>(channel_);
     agent_stub_ = agent_communication::AgentCommunicationService::NewStub(channel_);
 
     if (!stub_ || !agent_stub_) {

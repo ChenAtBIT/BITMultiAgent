@@ -30,6 +30,7 @@
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <thread>
 #include <chrono>
 
@@ -99,11 +100,12 @@ public:
             std::cerr << "[Orchestrator] MCP 初始化失败，将在无 MCP 模式下运行" << std::endl;
         } else if (mcp_integration_->isAvailable()) {
             auto tools = mcp_integration_->getToolNames();
-            std::cout << "[Orchestrator] MCP 已启用，可用工具: ";
+            std::ostringstream tool_list;
+            tool_list << "[Orchestrator] MCP 已启用，可用工具:";
             for (const auto& tool : tools) {
-                std::cout << tool << " ";
+                tool_list << " " << tool;
             }
-            std::cout << std::endl;
+            std::cout << tool_list.str() << std::endl;
         }
         
         std::cout << "[Orchestrator] 初始化完成" << std::endl;

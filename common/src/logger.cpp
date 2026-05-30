@@ -7,6 +7,12 @@
 #include <sstream>
 #include <thread>
 
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
+
 namespace agent_rpc {
 namespace common {
 
@@ -22,6 +28,18 @@ std::string basename(const std::string& path) {
     } catch (...) {
         return path;
     }
+}
+
+bool isTerminalStream(FILE* stream) {
+    if (stream == nullptr) {
+        return false;
+    }
+
+#ifdef _WIN32
+    return ::_isatty(::_fileno(stream)) != 0;
+#else
+    return ::isatty(::fileno(stream)) != 0;
+#endif
 }
 
 std::shared_ptr<Logger> getOrCreateLogger() {
@@ -123,12 +141,16 @@ std::string LogFormatter::getLevelColor(LogLevel level) const {
 }
 
 ConsoleAppender::ConsoleAppender(bool use_color)
-    : use_color_(use_color), formatter_(use_color) {}
+    : use_color_(use_color) {}
 
 void ConsoleAppender::append(const LogEntry& entry) {
     std::lock_guard<std::mutex> lock(output_mutex_);
     auto& stream = (entry.level >= LogLevel::Level_ERROR) ? std::cerr : std::cout;
-    stream << formatter_.format(entry) << std::endl;
+    const bool can_use_color = use_color_ &&
+                               std::getenv("NO_COLOR") == nullptr &&
+                               isTerminalStream((entry.level >= LogLevel::Level_ERROR) ? stderr : stdout);
+    const auto& formatter = can_use_color ? color_formatter_ : plain_formatter_;
+    stream << formatter.format(entry) << std::endl;
 }
 
 void ConsoleAppender::flush() {
