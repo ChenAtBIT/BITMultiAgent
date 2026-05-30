@@ -137,15 +137,8 @@ public:
             return this->get_agent_card();
         });
         
+        server.listen();
         std::cout << "[Orchestrator] 启动在端口 " << port << std::endl;
-        
-        // 在后台线程中启动服务器
-        std::thread server_thread([&server]() {
-            server.start();
-        });
-        
-        // 等待服务器启动
-        std::this_thread::sleep_for(std::chrono::seconds(1));
         
         // 注册到注册中心
         AgentRegistration registration;
@@ -160,7 +153,7 @@ public:
             std::cerr << "[Orchestrator] 注册失败" << std::endl;
         }
         
-        server_thread.join();
+        server.serve();
     }
 
 private:

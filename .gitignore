@@ -64,3 +64,4 @@ core
 core.*
 vgcore.*
 examples/ai_orchestrator/pids
+boost.md

@@ -20,9 +20,9 @@ if [ ! -f "$BIN_DIR/ai_registry_server" ]; then
 fi
 
 # 配置
-REGISTRY_PORT=8500
-ORCHESTRATOR_PORT=5000
-MATH_AGENT_PORT=5001
+REGISTRY_PORT="${REGISTRY_PORT:-18501}"
+ORCHESTRATOR_PORT="${ORCHESTRATOR_PORT:-15002}"
+MATH_AGENT_PORT="${MATH_AGENT_PORT:-15003}"
 REDIS_HOST="127.0.0.1"
 REDIS_PORT=6379
 
@@ -51,6 +51,34 @@ fi
 # 创建日志和 PID 目录
 mkdir -p "$SCRIPT_DIR/logs" "$SCRIPT_DIR/pids"
 
+cleanup_failed_start() {
+    echo ""
+    echo "启动失败，正在停止已启动的服务..."
+    "$SCRIPT_DIR/stop_system.sh"
+}
+
+wait_for_service() {
+    local service_name="$1"
+    local pid="$2"
+    local port="$3"
+    local log_file="$4"
+
+    sleep 1
+
+    if ! kill -0 "$pid" 2>/dev/null; then
+        echo "错误: $service_name 启动失败 (端口: $port)"
+        if [ -f "$log_file" ]; then
+            echo "最近日志:"
+            tail -n 20 "$log_file"
+        fi
+        echo "提示: 如果端口被占用，可通过 REGISTRY_PORT / ORCHESTRATOR_PORT / MATH_AGENT_PORT 覆盖默认端口"
+        cleanup_failed_start
+        exit 1
+    fi
+
+    echo "$service_name 启动完成 (端口: $port)"
+}
+
 echo "=========================================="
 echo "AI Agent 系统启动"
 echo "=========================================="
@@ -58,9 +86,9 @@ echo "=========================================="
 # 1. 启动 Registry Server
 echo "[1/3] 启动 Registry Server..."
 "$BIN_DIR/ai_registry_server" $REGISTRY_PORT > "$SCRIPT_DIR/logs/registry.log" 2>&1 &
-echo $! > "$SCRIPT_DIR/pids/registry.pid"
-sleep 1
-echo "Registry Server 启动完成 (端口: $REGISTRY_PORT)"
+registry_pid=$!
+echo $registry_pid > "$SCRIPT_DIR/pids/registry.pid"
+wait_for_service "Registry Server" "$registry_pid" "$REGISTRY_PORT" "$SCRIPT_DIR/logs/registry.log"
 
 # MCP 参数
 MCP_ARGS=""
@@ -87,16 +115,16 @@ fi
 # 2. 启动 Math Agent
 echo "[2/3] 启动 Math Agent..."
 "$BIN_DIR/ai_math_agent" math-1 $MATH_AGENT_PORT http://localhost:$REGISTRY_PORT $API_KEY --redis-host $REDIS_HOST --redis-port $REDIS_PORT $MCP_ARGS $RAG_ARGS > "$SCRIPT_DIR/logs/math_agent.log" 2>&1 &
-echo $! > "$SCRIPT_DIR/pids/math_agent.pid"
-sleep 1
-echo "Math Agent 启动完成 (端口: $MATH_AGENT_PORT)"
+math_agent_pid=$!
+echo $math_agent_pid > "$SCRIPT_DIR/pids/math_agent.pid"
+wait_for_service "Math Agent" "$math_agent_pid" "$MATH_AGENT_PORT" "$SCRIPT_DIR/logs/math_agent.log"
 
 # 3. 启动 Orchestrator
 echo "[3/3] 启动 Orchestrator..."
 "$BIN_DIR/ai_orchestrator" orch-1 $ORCHESTRATOR_PORT http://localhost:$REGISTRY_PORT $API_KEY --redis-host $REDIS_HOST --redis-port $REDIS_PORT $MCP_ARGS $RAG_ARGS > "$SCRIPT_DIR/logs/orchestrator.log" 2>&1 &
-echo $! > "$SCRIPT_DIR/pids/orchestrator.pid"
-sleep 1
-echo "Orchestrator 启动完成 (端口: $ORCHESTRATOR_PORT)"
+orchestrator_pid=$!
+echo $orchestrator_pid > "$SCRIPT_DIR/pids/orchestrator.pid"
+wait_for_service "Orchestrator" "$orchestrator_pid" "$ORCHESTRATOR_PORT" "$SCRIPT_DIR/logs/orchestrator.log"
 
 echo ""
 echo "=========================================="

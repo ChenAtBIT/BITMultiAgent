@@ -96,13 +96,8 @@ public:
             return this->get_agent_card();
         });
         
+        server.listen();
         std::cout << "[MathAgent] 启动在端口 " << port << std::endl;
-        
-        std::thread server_thread([&server]() {
-            server.start();
-        });
-        
-        std::this_thread::sleep_for(std::chrono::seconds(1));
         
         // 注册到注册中心
         AgentRegistration registration;
@@ -117,7 +112,7 @@ public:
             std::cerr << "[MathAgent] 注册失败" << std::endl;
         }
         
-        server_thread.join();
+        server.serve();
     }
 
 private:

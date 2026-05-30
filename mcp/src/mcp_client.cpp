@@ -8,9 +8,47 @@
 #include <json/json.h>
 #include <ctime>
 #include <curl/curl.h>
+#include <filesystem>
 
 namespace agent_rpc {
 namespace mcp {
+
+namespace {
+
+bool hasServerArg(const std::vector<std::string>& args,
+                  const std::string& short_flag,
+                  const std::string& long_flag) {
+    return std::find(args.begin(), args.end(), short_flag) != args.end() ||
+           std::find(args.begin(), args.end(), long_flag) != args.end();
+}
+
+std::vector<std::string> buildEffectiveServerArgs(
+    const std::string& server_path,
+    const std::vector<std::string>& args) {
+    std::vector<std::string> effective_args = args;
+
+    if (hasServerArg(effective_args, "-p", "--plugins")) {
+        return effective_args;
+    }
+
+    std::error_code ec;
+    const auto absolute_server_path = std::filesystem::absolute(server_path, ec);
+    if (ec) {
+        return effective_args;
+    }
+
+    const auto plugins_dir = absolute_server_path.parent_path() / "plugins";
+    if (std::filesystem::exists(plugins_dir, ec) &&
+        std::filesystem::is_directory(plugins_dir, ec)) {
+        effective_args.push_back("-p");
+        effective_args.push_back(plugins_dir.string());
+        LOG_INFO("Using inferred MCP plugins directory: " + plugins_dir.string());
+    }
+
+    return effective_args;
+}
+
+}  // namespace
 
 // MCPClient 实现
 MCPClient::MCPClient() {
@@ -498,6 +536,8 @@ void MCPClient::processNotificationsStdio() {
 }
 
 bool MCPClient::startMCPServer() {
+    const auto effective_server_args = buildEffectiveServerArgs(server_path_, server_args_);
+
     // 创建管道
     int stdin_pipe_fd[2];
     int stdout_pipe_fd[2];
@@ -527,7 +567,7 @@ bool MCPClient::startMCPServer() {
         std::vector<char*> argv;
         argv.push_back(const_cast<char*>(server_path_.c_str()));
         
-        for (const auto& arg : server_args_) {
+        for (const auto& arg : effective_server_args) {
             argv.push_back(const_cast<char*>(arg.c_str()));
         }
         argv.push_back(nullptr);
@@ -955,5 +995,4 @@ size_t MCPClient::sseHeaderCallback(char* buffer, size_t size, size_t nitems, vo
 
 } // namespace mcp
 } // namespace agent_rpc
-
 

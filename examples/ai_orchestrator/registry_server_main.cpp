@@ -26,16 +26,6 @@ public:
         , running_(false) {}
     
     void start(int port) {
-        running_ = true;
-        
-        // 启动健康检查线程
-        std::thread health_thread([this]() {
-            while (running_) {
-                registry_.check_health();
-                std::this_thread::sleep_for(std::chrono::seconds(10));
-            }
-        });
-        
         HttpServer server(port);
         
         // 注册 Agent
@@ -63,12 +53,33 @@ public:
             return handle_list();
         });
         
+        server.listen();
         std::cout << "[Registry] 启动在端口 " << port << std::endl;
-        
-        server.start();
-        
+
+        running_ = true;
+
+        // 端口成功监听后再启动后台线程，避免异常路径触发 std::terminate
+        std::thread health_thread([this]() {
+            while (running_) {
+                registry_.check_health();
+                std::this_thread::sleep_for(std::chrono::seconds(10));
+            }
+        });
+
+        try {
+            server.serve();
+        } catch (...) {
+            running_ = false;
+            if (health_thread.joinable()) {
+                health_thread.join();
+            }
+            throw;
+        }
+
         running_ = false;
-        health_thread.join();
+        if (health_thread.joinable()) {
+            health_thread.join();
+        }
     }
 
 private:

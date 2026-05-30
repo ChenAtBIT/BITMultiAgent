@@ -4,6 +4,7 @@
 #include <functional>
 #include <map>
 #include <thread>
+#include <atomic>
 #include <iostream>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -22,7 +23,7 @@ public:
     // 流式处理器: 接收请求体和写入回调函数
     using StreamHandler = std::function<void(const std::string&, std::function<bool(const std::string&)>)>;
     
-    explicit HttpServer(int port) : port_(port), running_(false) {}
+    explicit HttpServer(int port) : port_(port), running_(false), server_fd_(-1) {}
     
     ~HttpServer() {
         stop();
@@ -42,44 +43,63 @@ public:
     }
 
     void start() {
-        running_ = true;
-        
-        // 创建 socket
+        listen();
+        serve();
+    }
+
+    void listen() {
+        if (server_fd_.load() >= 0) {
+            return;
+        }
+
         int server_fd = socket(AF_INET, SOCK_STREAM, 0);
         if (server_fd < 0) {
             throw std::runtime_error("Failed to create socket");
         }
-        
-        // 设置 socket 选项
+
         int opt = 1;
         setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-        
-        // 绑定地址
-        struct sockaddr_in address;
+
+        struct sockaddr_in address {};
         address.sin_family = AF_INET;
         address.sin_addr.s_addr = INADDR_ANY;
         address.sin_port = htons(port_);
-        
+
         if (bind(server_fd, (struct sockaddr*)&address, sizeof(address)) < 0) {
             close(server_fd);
             throw std::runtime_error("Failed to bind to port " + std::to_string(port_));
         }
-        
-        // 监听
-        if (listen(server_fd, 10) < 0) {
+
+        if (::listen(server_fd, 10) < 0) {
             close(server_fd);
             throw std::runtime_error("Failed to listen on port " + std::to_string(port_));
         }
-        
+
+        server_fd_.store(server_fd);
+        running_.store(true);
         std::cout << "HTTP Server listening on port " << port_ << std::endl;
-        
+    }
+
+    void serve() {
+        if (server_fd_.load() < 0) {
+            listen();
+        }
+
         // 接受连接
-        while (running_) {
+        while (running_.load()) {
+            int server_fd = server_fd_.load();
+            if (server_fd < 0) {
+                break;
+            }
+
             struct sockaddr_in client_addr;
             socklen_t client_len = sizeof(client_addr);
             
             int client_fd = accept(server_fd, (struct sockaddr*)&client_addr, &client_len);
             if (client_fd < 0) {
+                if (!running_.load()) {
+                    break;
+                }
                 continue;
             }
             
@@ -88,15 +108,25 @@ public:
                 this->handle_client(client_fd);
             }).detach();
         }
-        
-        close(server_fd);
+
+        close_server_socket();
+        running_.store(false);
     }
     
     void stop() {
-        running_ = false;
+        running_.store(false);
+        close_server_socket();
     }
 
 private:
+    void close_server_socket() {
+        int server_fd = server_fd_.exchange(-1);
+        if (server_fd >= 0) {
+            shutdown(server_fd, SHUT_RDWR);
+            close(server_fd);
+        }
+    }
+
     void handle_client(int client_fd) {
         char buffer[8192] = {0};
         ssize_t bytes_read = read(client_fd, buffer, sizeof(buffer) - 1);
@@ -203,7 +233,8 @@ private:
     }
 
     int port_;
-    bool running_;
+    std::atomic<bool> running_;
+    std::atomic<int> server_fd_;
     std::map<std::string, RequestHandler> handlers_;
     std::map<std::string, StreamHandler> stream_handlers_;
 };
