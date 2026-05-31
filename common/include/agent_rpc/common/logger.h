@@ -31,7 +31,7 @@ struct LogConfig {
     std::string log_file = "";
     bool console_output = true;
     bool file_output = false;
-    bool async_logging = true;
+    bool async_logging = false; // 默认启用异步日志，提升性能
     size_t max_file_size = 100 * 1024 * 1024;
     int max_files = 10;
     std::string log_format = "[%Y-%m-%d %H:%M:%S.%f] [%l] [%t] [%s:%n] %v";

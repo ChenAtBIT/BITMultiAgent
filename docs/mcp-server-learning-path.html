@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MCP-Server 学习路线图</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --bg-soft: #fbf7f0;
+      --ink: #1b1b19;
+      --muted: #5b584f;
+      --line: rgba(47, 41, 29, 0.12);
+      --accent: #a14f2a;
+      --accent-2: #1f5c57;
+      --accent-3: #c89c2c;
+      --panel: rgba(255, 251, 244, 0.82);
+      --shadow: 0 18px 45px rgba(66, 52, 28, 0.12);
+      --radius: 22px;
+      --font-sans: "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --font-serif: "Iowan Old Style", "Palatino Linotype", "Songti SC", serif;
+      --font-mono: "SFMono-Regular", "JetBrains Mono", "Menlo", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: var(--font-sans);
+      background:
+        radial-gradient(circle at top left, rgba(200, 156, 44, 0.2), transparent 28rem),
+        radial-gradient(circle at top right, rgba(31, 92, 87, 0.16), transparent 24rem),
+        linear-gradient(180deg, #f6f0e7 0%, #f0e8dc 50%, #ece4d8 100%);
+      line-height: 1.65;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(161, 79, 42, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(161, 79, 42, 0.035) 1px, transparent 1px);
+      background-size: 28px 28px;
+      mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.35), transparent 80%);
+    }
+
+    .wrap {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 24px 0 80px;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 34px;
+      margin-top: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.45);
+      border-radius: 32px;
+      background:
+        linear-gradient(135deg, rgba(255, 248, 236, 0.94), rgba(246, 239, 230, 0.88)),
+        rgba(255, 255, 255, 0.72);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      width: 260px;
+      height: 260px;
+      right: -80px;
+      top: -80px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(161, 79, 42, 0.24), transparent 70%);
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: rgba(161, 79, 42, 0.08);
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      color: var(--ink);
+    }
+
+    h1 {
+      margin-top: 18px;
+      font-family: var(--font-serif);
+      font-size: clamp(2rem, 4.6vw, 4rem);
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      max-width: 12ch;
+    }
+
+    .hero p {
+      max-width: 66ch;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 1.04rem;
+    }
+
+    .jump {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 28px;
+    }
+
+    .jump a {
+      text-decoration: none;
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.68);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 14px 16px;
+      min-height: 84px;
+      box-shadow: 0 8px 24px rgba(79, 63, 34, 0.08);
+      transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+    }
+
+    .jump a:hover {
+      transform: translateY(-2px);
+      border-color: rgba(161, 79, 42, 0.35);
+      background: rgba(255, 255, 255, 0.9);
+    }
+
+    .jump strong {
+      display: block;
+      font-size: 0.95rem;
+    }
+
+    .jump span {
+      display: block;
+      margin-top: 8px;
+      font-size: 0.88rem;
+      color: var(--muted);
+    }
+
+    section {
+      margin-top: 28px;
+    }
+
+    .section-card {
+      border: 1px solid rgba(255, 255, 255, 0.42);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      padding: 28px;
+      backdrop-filter: blur(10px);
+    }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .section-head h2 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.55rem, 2.4vw, 2.2rem);
+      letter-spacing: -0.02em;
+    }
+
+    .section-head p {
+      margin: 0;
+      max-width: 55ch;
+      color: var(--muted);
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      padding: 18px;
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.66);
+    }
+
+    .card h3 {
+      font-size: 1.08rem;
+      margin-bottom: 8px;
+    }
+
+    .card p,
+    .card li {
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .card ul,
+    .card ol {
+      margin: 10px 0 0 20px;
+      padding: 0;
+    }
+
+    .flow-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(180px, 1fr));
+      gap: 12px;
+      align-items: stretch;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+
+    .flow-step {
+      position: relative;
+      min-width: 180px;
+      padding: 18px;
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(247, 242, 235, 0.82));
+    }
+
+    .flow-step::after {
+      content: "→";
+      position: absolute;
+      top: 50%;
+      right: -11px;
+      transform: translateY(-50%);
+      color: rgba(91, 88, 79, 0.5);
+      font-size: 1.3rem;
+    }
+
+    .flow-step:last-child::after {
+      display: none;
+    }
+
+    .flow-kicker {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .flow-step strong {
+      display: block;
+      font-size: 1rem;
+      margin-bottom: 8px;
+    }
+
+    .flow-step code,
+    .inline-code,
+    pre,
+    table code {
+      font-family: var(--font-mono);
+    }
+
+    .flow-step p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .callout {
+      display: grid;
+      grid-template-columns: 1.25fr 0.95fr;
+      gap: 16px;
+    }
+
+    .callout-panel {
+      padding: 20px;
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    .callout-panel h3 {
+      margin-bottom: 10px;
+    }
+
+    .callout-panel ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .callout-panel li {
+      margin: 6px 0;
+      color: var(--muted);
+    }
+
+    .matrix {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 16px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      border-radius: 18px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    th,
+    td {
+      padding: 14px 16px;
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid var(--line);
+      font-size: 0.95rem;
+    }
+
+    th {
+      background: rgba(27, 27, 25, 0.04);
+      font-size: 0.83rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    td p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .method-badge {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(31, 92, 87, 0.09);
+      color: var(--accent-2);
+      font-weight: 700;
+      font-size: 0.82rem;
+      margin: 0 6px 6px 0;
+    }
+
+    pre {
+      margin: 0;
+      padding: 18px;
+      overflow-x: auto;
+      border-radius: 20px;
+      background: #1e1d1a;
+      color: #f6efe4;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    .code-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .note-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .note {
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(161, 79, 42, 0.16);
+      background: rgba(161, 79, 42, 0.06);
+      color: #6d452e;
+      font-size: 0.9rem;
+    }
+
+    .path-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .path-item {
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.68);
+    }
+
+    .path-item strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .path-item code,
+    .foot code {
+      color: #6b2f10;
+      font-size: 0.92rem;
+    }
+
+    .foot {
+      margin-top: 24px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    @media (max-width: 980px) {
+      .jump,
+      .cards,
+      .callout,
+      .matrix,
+      .code-grid,
+      .path-list {
+        grid-template-columns: 1fr;
+      }
+
+      .section-head {
+        flex-direction: column;
+        align-items: start;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .wrap {
+        width: min(100% - 20px, 1180px);
+      }
+
+      .hero,
+      .section-card {
+        padding: 22px;
+        border-radius: 24px;
+      }
+
+      h1 {
+        max-width: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <div class="eyebrow">MCP Server Learning Map</div>
+      <h1>先把 MCP-Server 这一层学透</h1>
+      <p>
+        这份页面专门为这个仓库写，目标不是泛泛介绍 MCP，而是帮你顺着真实代码看到：
+        Agent 是怎么发现工具、怎么发起 <span class="inline-code">tools/call</span>、
+        <span class="inline-code">mcp_server</span> 又是怎么把请求路由给插件的。
+      </p>
+      <div class="jump">
+        <a href="#route">
+          <strong>学习顺序</strong>
+          <span>先看哪里，后看哪里，避免一上来迷路。</span>
+        </a>
+        <a href="#flow">
+          <strong>调用全链路</strong>
+          <span>一条工具调用从 Agent 走到插件的完整路径。</span>
+        </a>
+        <a href="#objects">
+          <strong>对象与函数</strong>
+          <span>核心类、重要方法、作用边界。</span>
+        </a>
+        <a href="#json">
+          <strong>JSON 示例</strong>
+          <span>真正发出去的 JSON-RPC 请求与插件返回格式。</span>
+        </a>
+      </div>
+    </header>
+
+    <section id="route">
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h2>学习路线</h2>
+          </div>
+          <p>推荐你沿着“配置入口 → Agent 封装 → Client 通信 → Server 分发 → Plugin 执行”这条线读，不要先钻 RAG 或全部插件。</p>
+        </div>
+        <div class="cards">
+          <article class="card">
+            <h3>第 1 步：先看配置入口</h3>
+            <p>搞清楚 MCP 是怎么被打开的，路径和插件目录怎么传进去。</p>
+            <ol>
+              <li><code>examples/ai_orchestrator/start_system.sh</code></li>
+              <li><code>mcp/src/mcp_agent_integration.cpp</code> 里的 <code>parseMCPConfigFromArgs()</code></li>
+              <li><code>parseMCPConfigFromEnv()</code> 看环境变量兜底</li>
+            </ol>
+          </article>
+          <article class="card">
+            <h3>第 2 步：看 Agent 如何“用 MCP”</h3>
+            <p>这一层最适合新手，因为它离业务最近，也最容易看出调用意图。</p>
+            <ol>
+              <li><code>MCPAgentIntegration::initialize()</code></li>
+              <li><code>MCPAgentIntegration::getAvailableTools()</code></li>
+              <li><code>MCPAgentIntegration::callTool()</code></li>
+              <li><code>MathAgent::tryMCPCalculation()</code></li>
+            </ol>
+          </article>
+          <article class="card">
+            <h3>第 3 步：看 Client 如何和 MCP Server 通信</h3>
+            <p>这里是“真正发请求”的地方，默认是本地子进程 + STDIO，不是直接 HTTP。</p>
+            <ol>
+              <li><code>MCPClient::connect()</code></li>
+              <li><code>MCPClient::startMCPServer()</code></li>
+              <li><code>MCPClient::listTools()</code></li>
+              <li><code>MCPClient::callTool()</code></li>
+              <li><code>buildJSONRPCRequest()</code> / <code>parseJSONRPCResponse()</code></li>
+            </ol>
+          </article>
+          <article class="card">
+            <h3>第 4 步：看 Server 和插件如何接住请求</h3>
+            <p>这一步会让你真正明白 MCP-Server 不是“黑盒”，而是一个方法分发器 + 插件宿主。</p>
+            <ol>
+              <li><code>mcp_server_integrated/src/main.cpp</code> 的 <code>OverrideCallback("tools/list")</code></li>
+              <li><code>OverrideCallback("tools/call")</code></li>
+              <li><code>PluginsLoader::LoadPlugin()</code></li>
+              <li><code>PluginAPI</code> 和插件里的 <code>HandleRequest()</code></li>
+            </ol>
+          </article>
+        </div>
+        <div class="note-strip">
+          <div class="note">先学计算器插件最划算，因为它没有外部网络依赖，返回值也最容易读。</div>
+          <div class="note">RAG 是“选哪个工具”的增强层，不是 MCP 基础调用链的第一站。</div>
+          <div class="note">这个项目默认主路径是 STDIO 子进程模式，SSE 传输是可选能力。</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="flow">
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h2>一条调用怎么走</h2>
+          </div>
+          <p>以数学题 <code>1+7</code> 为例，重点看调用对象和方法名，不先纠结所有业务细节。</p>
+        </div>
+        <div class="flow-grid">
+          <div class="flow-step">
+            <div class="flow-kicker">Step 1</div>
+            <strong>MathAgent</strong>
+            <p><code>tryMCPCalculation(question)</code> 决定要不要用 MCP，并构造 <code>{"expression": "1+7"}</code>。</p>
+          </div>
+          <div class="flow-step">
+            <div class="flow-kicker">Step 2</div>
+            <strong>MCPAgentIntegration</strong>
+            <p><code>callTool("calculator", args)</code> 检查工具缓存、重试策略，再委托给工具管理器。</p>
+          </div>
+          <div class="flow-step">
+            <div class="flow-kicker">Step 3</div>
+            <strong>MCPToolManager / MCPClient</strong>
+            <p><code>executeTool()</code> → <code>MCPClient::callTool()</code>，发出 JSON-RPC 方法 <code>tools/call</code>。</p>
+          </div>
+          <div class="flow-step">
+            <div class="flow-kicker">Step 4</div>
+            <strong>mcp_server</strong>
+            <p><code>Server::HandleRequest()</code> 命中 <code>tools/call</code> 回调，遍历插件，找到工具名匹配的插件。</p>
+          </div>
+          <div class="flow-step">
+            <div class="flow-kicker">Step 5</div>
+            <strong>Calculator Plugin</strong>
+            <p><code>HandleRequest()</code> 读取 <code>params.name</code> 和 <code>params.arguments</code>，执行计算，返回 JSON 文本。</p>
+          </div>
+        </div>
+
+        <div class="callout" style="margin-top: 18px;">
+          <div class="callout-panel">
+            <h3>最重要的理解</h3>
+            <ul>
+              <li>Agent 不会直接调用 <code>Calculator.cpp</code>。</li>
+              <li>Agent 调的是 <code>MCPAgentIntegration</code>，它再调 <code>MCPClient</code>。</li>
+              <li><code>MCPClient</code> 默认会 <code>fork + execv</code> 一个本地 <code>mcp_server</code> 进程，并通过管道通信。</li>
+              <li><code>mcp_server</code> 再根据工具名把请求转交给某个插件的 <code>HandleRequest()</code>。</li>
+            </ul>
+          </div>
+          <div class="callout-panel">
+            <h3>你最该先记住的 JSON-RPC 方法</h3>
+            <span class="method-badge">tools/list</span>
+            <span class="method-badge">tools/call</span>
+            <span class="method-badge">prompts/list</span>
+            <span class="method-badge">prompts/get</span>
+            <span class="method-badge">resources/list</span>
+            <span class="method-badge">resources/read</span>
+            <span class="method-badge">notifications/message</span>
+            <p style="margin-top: 10px;">学习 MCP 调用链时，前两个最关键，后面可以第二轮再看。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="objects">
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h2>关键对象与函数</h2>
+          </div>
+          <p>下面这些类就是你理解 MCP-Server 调用的主骨架。先会连线，再看实现细节。</p>
+        </div>
+        <div class="matrix">
+          <table>
+            <thead>
+              <tr>
+                <th>对象</th>
+                <th>关键函数</th>
+                <th>你要理解什么</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>MCPAgentIntegration</strong></td>
+                <td><code>initialize()</code><br><code>callTool()</code><br><code>getToolNames()</code></td>
+                <td><p>给 Agent 用的高层封装。它负责连接、缓存工具、重试、降级和 RAG 接入。</p></td>
+              </tr>
+              <tr>
+                <td><strong>MCPToolManager</strong></td>
+                <td><code>initialize()</code><br><code>refreshTools()</code><br><code>executeTool()</code></td>
+                <td><p>面向“工具列表”的中间层。先 <code>tools/list</code> 建缓存，再按名字执行。</p></td>
+              </tr>
+              <tr>
+                <td><strong>MCPClient</strong></td>
+                <td><code>connect()</code><br><code>startMCPServer()</code><br><code>listTools()</code><br><code>callTool()</code></td>
+                <td><p>真正发 JSON-RPC 的客户端。默认 STDIO，本地起子进程，然后读写管道。</p></td>
+              </tr>
+              <tr>
+                <td><strong>vx::mcp::Server</strong></td>
+                <td><code>Connect()</code><br><code>HandleRequest()</code><br><code>OverrideCallback()</code></td>
+                <td><p>MCP 服务端骨架。读取一行 JSON，按 <code>method</code> 分发，写回响应。</p></td>
+              </tr>
+              <tr>
+                <td><strong>PluginsLoader</strong></td>
+                <td><code>LoadPlugins()</code><br><code>LoadPlugin()</code></td>
+                <td><p>把 <code>.so</code> 插件加载进来，取出 <code>CreatePlugin</code> / <code>DestroyPlugin</code>。</p></td>
+              </tr>
+              <tr>
+                <td><strong>PluginAPI</strong></td>
+                <td><code>GetToolCount()</code><br><code>GetTool()</code><br><code>HandleRequest()</code></td>
+                <td><p>插件对 Server 暴露的统一 ABI。Server 只认这套函数指针。</p></td>
+              </tr>
+            </tbody>
+          </table>
+          <table>
+            <thead>
+              <tr>
+                <th>调用点</th>
+                <th>对象</th>
+                <th>关键细节</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>启动参数入口</strong></td>
+                <td><code>parseMCPConfigFromArgs()</code></td>
+                <td><p>识别 <code>--enable-mcp</code>、<code>--mcp-server</code>、<code>--mcp-args</code>、<code>--enable-rag</code>。</p></td>
+              </tr>
+              <tr>
+                <td><strong>STDIO 传输</strong></td>
+                <td><code>Stdio::Read()</code> / <code>Write()</code></td>
+                <td><p>每条消息按“单行 JSON”读写；客户端发一行，服务端回一行。</p></td>
+              </tr>
+              <tr>
+                <td><strong>工具发现</strong></td>
+                <td><code>MCPClient::listTools()</code></td>
+                <td><p>发 <code>tools/list</code>，解析 <code>result.tools[]</code>，写入 <code>tool_map_</code>。</p></td>
+              </tr>
+              <tr>
+                <td><strong>工具路由</strong></td>
+                <td><code>OverrideCallback("tools/call")</code></td>
+                <td><p>Server 遍历全部插件和工具定义，通过 <code>params.name</code> 找匹配项。</p></td>
+              </tr>
+              <tr>
+                <td><strong>插件执行</strong></td>
+                <td><code>HandleRequest(const char*)</code></td>
+                <td><p>插件自己解析整条请求 JSON，并生成结果 JSON 字符串返回给 Server。</p></td>
+              </tr>
+              <tr>
+                <td><strong>通知机制</strong></td>
+                <td><code>notifications-&gt;SendToClient()</code></td>
+                <td><p>插件可主动推消息给客户端，通知再由 Server 发回去。</p></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="config">
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h2>配置入口长什么样</h2>
+          </div>
+          <p>这一段很重要，因为它解释了为什么 Agent 知道该启动哪个 <code>mcp_server</code>，也解释了插件目录是怎么传进去的。</p>
+        </div>
+        <div class="code-grid">
+          <pre><code># start_system.sh 里拼出来的 MCP 参数
+MCP_ARGS="--enable-mcp --mcp-server $MCP_SERVER_PATH \
+--mcp-args -l,$MCP_LOGS_PATH,-p,$MCP_PLUGINS_PATH"</code></pre>
+          <pre><code>// parseMCPConfigFromArgs()
+if (arg == "--mcp-server") {
+  config.mcp_server_path = argv[++i];
+  config.enable_mcp = true;
+} else if (arg == "--mcp-args") {
+  // 用逗号拆分，得到 -l logs -p plugins
+}</code></pre>
+        </div>
+        <div class="cards" style="margin-top: 16px;">
+          <article class="card">
+            <h3>这意味着什么</h3>
+            <ul>
+              <li>Agent 本身不内置工具，它只是拿到 <code>mcp_server</code> 路径与参数。</li>
+              <li><code>-p</code> 指向插件目录，所以 Server 启动后能批量发现 <code>.so</code>。</li>
+              <li><code>-l</code> 只是日志目录，不参与工具调用逻辑。</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>你最先应该验证的点</h3>
+            <ul>
+              <li><code>mcp_server</code> 二进制路径是否存在。</li>
+              <li>插件目录里是否真有 <code>.so</code> 文件。</li>
+              <li><code>tools/list</code> 能否列出工具名，比如 <code>calculator</code>。</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="json">
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h2>你会看到的 JSON</h2>
+          </div>
+          <p>先盯住 <code>tools/list</code> 和 <code>tools/call</code> 这两个请求格式，理解起来最快。</p>
+        </div>
+        <div class="code-grid">
+          <div>
+            <h3 style="margin-bottom: 10px;">1. Client 发给 Server 的 <code>tools/call</code></h3>
+            <pre><code>{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "id": "call_tool_1712345678",
+  "params": {
+    "name": "calculator",
+    "arguments": {
+      "expression": "1+7"
+    }
+  }
+}</code></pre>
+          </div>
+          <div>
+            <h3 style="margin-bottom: 10px;">2. 计算器插件返回给 Server 的结果体</h3>
+            <pre><code>{
+  "content": [
+    {
+      "type": "text",
+      "text": "1+7 = 8"
+    }
+  ],
+  "isError": false
+}</code></pre>
+          </div>
+        </div>
+        <div class="code-grid" style="margin-top: 16px;">
+          <div>
+            <h3 style="margin-bottom: 10px;">3. Server 回给 Client 的 <code>tools/list</code> 样式</h3>
+            <pre><code>{
+  "jsonrpc": "2.0",
+  "id": "list_tools_1712345678",
+  "result": {
+    "tools": [
+      {
+        "name": "calculator",
+        "description": "Evaluates a mathematical expression",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "expression": { "type": "string" }
+          },
+          "required": ["expression"]
+        }
+      }
+    ]
+  }
+}</code></pre>
+          </div>
+          <div>
+            <h3 style="margin-bottom: 10px;">4. Agent 侧最常见的调用代码</h3>
+            <pre><code>json args;
+args["expression"] = question;
+
+auto result = mcp_integration_->callTool(
+  "calculator",
+  args.dump()
+);
+
+if (result.success) {
+  return result.result;
+}</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="plugins">
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h2>内置插件怎么看</h2>
+          </div>
+          <p>先看 <code>calculator</code>，再看有通知或外部 API 的插件。学习成本会低很多。</p>
+        </div>
+        <div class="cards">
+          <article class="card">
+            <h3>最适合入门：Calculator</h3>
+            <ul>
+              <li>工具名：<code>calculator</code>、<code>add</code>、<code>subtract</code>、<code>multiply</code>、<code>divide</code>、<code>power</code>、<code>sqrt</code>、<code>factorial</code></li>
+              <li>优点：无网络依赖，参数简单，返回文本直观。</li>
+              <li>重点看：<code>methods[]</code> 和 <code>HandleRequest()</code> 里的 <code>toolName</code> 分支。</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>第二轮再看：Weather</h3>
+            <ul>
+              <li>工具名：<code>get_weather</code></li>
+              <li>重点：插件内部还能继续发 HTTP 请求，不只是本地计算。</li>
+              <li>适合理解“插件里可以封装外部服务”。</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>进阶：Notification</h3>
+            <ul>
+              <li>工具名：<code>progress_test</code>、<code>logging_test</code></li>
+              <li>重点：<code>notifications-&gt;SendToClient()</code> 如何主动推送进度。</li>
+              <li>适合理解 MCP 不只是 request-response。</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>最简案例：Sleep</h3>
+            <ul>
+              <li>工具名：<code>sleep</code></li>
+              <li>重点：参数读入、执行、返回三段式最清楚。</li>
+              <li>适合你仿写自己的第一个插件。</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="files">
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h2>建议你按这个文件顺序读</h2>
+          </div>
+          <p>如果你只拿 40 分钟学习，照这个顺序基本能摸清 MCP-Server 层的主干。</p>
+        </div>
+        <div class="path-list">
+          <div class="path-item">
+            <strong>1. 配置入口</strong>
+            <code>examples/ai_orchestrator/start_system.sh</code><br>
+            <code>mcp/src/mcp_agent_integration.cpp</code>
+          </div>
+          <div class="path-item">
+            <strong>2. Agent 调用入口</strong>
+            <code>examples/ai_orchestrator/math_agent_main.cpp</code>
+          </div>
+          <div class="path-item">
+            <strong>3. 客户端通信层</strong>
+            <code>mcp/include/agent_rpc/mcp/mcp_client.h</code><br>
+            <code>mcp/src/mcp_client.cpp</code>
+          </div>
+          <div class="path-item">
+            <strong>4. 工具缓存与执行层</strong>
+            <code>mcp/src/mcp_tool_manager.cpp</code>
+          </div>
+          <div class="path-item">
+            <strong>5. MCP Server 主入口</strong>
+            <code>mcp_server_integrated/src/main.cpp</code>
+          </div>
+          <div class="path-item">
+            <strong>6. 方法分发骨架</strong>
+            <code>mcp_server_integrated/src/server/Server.cpp</code>
+          </div>
+          <div class="path-item">
+            <strong>7. 插件 ABI</strong>
+            <code>mcp_server_integrated/src/interface/PluginAPI.h</code>
+          </div>
+          <div class="path-item">
+            <strong>8. 动态加载器</strong>
+            <code>mcp_server_integrated/src/loader/PluginsLoader.cpp</code>
+          </div>
+          <div class="path-item">
+            <strong>9. 第一个插件样本</strong>
+            <code>mcp_server_integrated/plugins/calculator/Calculator.cpp</code>
+          </div>
+          <div class="path-item">
+            <strong>10. 官方仓库内补充文档</strong>
+            <code>docs/mcp-plugin-development.md</code>
+          </div>
+        </div>
+        <p class="foot">
+          如果你只想搞懂“调用对象、函数、请求格式”，读到第 9 个文件已经够用了。
+          如果你想自己写插件，再回头看 <code>docs/mcp-plugin-development.md</code>。
+        </p>
+      </div>
+    </section>
+
+    <section id="summary">
+      <div class="section-card">
+        <div class="section-head">
+          <div>
+            <h2>一句话总结</h2>
+          </div>
+          <p>把 MCP-Server 想成“本地工具总线”：Agent 负责发起，Client 负责传输，Server 负责分发，Plugin 负责真正干活。</p>
+        </div>
+        <div class="callout">
+          <div class="callout-panel">
+            <h3>先背下来的主链路</h3>
+            <pre><code>MathAgent::tryMCPCalculation()
+  -> MCPAgentIntegration::callTool()
+  -> MCPToolManager::executeTool()
+  -> MCPClient::callTool()
+  -> mcp_server (tools/call)
+  -> PluginAPI::HandleRequest()
+  -> Calculator::HandleRequestImpl()</code></pre>
+          </div>
+          <div class="callout-panel">
+            <h3>你下一步最值得做的练习</h3>
+            <ul>
+              <li>手动追一次 <code>calculator</code> 的调用链。</li>
+              <li>把 <code>sleep</code> 插件读懂，看它如何读取参数。</li>
+              <li>然后仿照它写一个最小工具，比如 <code>echo_text</code>。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

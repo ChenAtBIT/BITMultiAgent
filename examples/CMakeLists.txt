@@ -48,6 +48,9 @@ add_subdirectory(ai_orchestrator)
 # gRPC AI Demo - 核心 RPC 示例 (Client/Server 直接通信)
 add_subdirectory(grpc_ai_demo)
 
+# MCP + gRPC 新手教程示例
+add_subdirectory(mcp_grpc_tutorial)
+
 # RAG-MCP 示例
 add_executable(rag_mcp_example rag_mcp_example.cpp)
 target_link_libraries(rag_mcp_example 

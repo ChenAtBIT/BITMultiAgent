@@ -47,7 +47,7 @@ cd my_plugin
 // MyPlugin.h
 #pragma once
 
-#include "../../include/PluginAPI.h"
+#include "PluginAPI.h"
 
 class MyPlugin {
 public:

@@ -83,7 +83,7 @@ bool MCPClient::connect(const MCPConnectionConfig& config) {
         server_path_ = config.server_path;
         server_args_ = config.server_args;
         
-        if (!startMCPServer()) {
+        if (!startMCPServer()) { // fork 子进程来运行 MCP Server
             LOG_ERROR("Failed to start MCP server");
             return false;
         }
@@ -479,6 +479,7 @@ void MCPClient::processNotificationsStdio() {
     std::string line;
     
     while (running_) {
+        // 非阻塞读取 Server 输出（注：非阻塞用于及时响应退出 running_）
         ssize_t bytes_read = read(stdout_pipe_, buffer, sizeof(buffer) - 1);
         if (bytes_read > 0) {
             buffer[bytes_read] = '\0';
@@ -531,6 +532,7 @@ void MCPClient::processNotificationsStdio() {
                 LOG_ERROR("Error reading from MCP server stdout");
                 break;
             }
+            // 非阻塞模式下，现在没数据
         }
     }
 }
@@ -560,8 +562,8 @@ bool MCPClient::startMCPServer() {
         close(stdout_pipe_fd[0]); // 关闭读端
         
         // 重定向stdin和stdout
-        dup2(stdin_pipe_fd[0], STDIN_FILENO);
-        dup2(stdout_pipe_fd[1], STDOUT_FILENO);
+        dup2(stdin_pipe_fd[0], STDIN_FILENO); // 将Server的标准输入重定向到管道的读端
+        dup2(stdout_pipe_fd[1], STDOUT_FILENO); // 将Server的标准输出重定向到管道的写端
         
         // 准备参数
         std::vector<char*> argv;
@@ -573,7 +575,7 @@ bool MCPClient::startMCPServer() {
         argv.push_back(nullptr);
         
         // 执行MCP服务器
-        execv(server_path_.c_str(), argv.data());
+        execv(server_path_.c_str(), argv.data()); // execv会替换当前进程映像，如果成功不会返回；如果失败会返回-1
         
         // 如果execv失败
         LOG_ERROR("Failed to execute MCP server: " + server_path_);
