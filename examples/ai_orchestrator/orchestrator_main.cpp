@@ -41,11 +41,27 @@ using namespace agent_rpc::mcp;
 // 简单的 HTTP 客户端
 class SimpleHttpClient {
 public:
+    /**
+     * @brief libcurl 写回调
+     * @param contents 当前回调返回的数据块
+     * @param size 单个元素大小
+     * @param nmemb 元素个数
+     * @param userp 累积响应内容的目标缓冲区
+     * @return 实际处理的字节数
+     */
     static size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* userp) {
         userp->append((char*)contents, size * nmemb);
         return size * nmemb;
     }
     
+    /**
+     * @brief 发送 HTTP POST 请求
+     * @param url 下游 Agent 的 A2A 服务地址
+     * @param body JSON-RPC 请求体
+     * @return 下游 Agent 返回的原始响应字符串
+     *
+     * 这里只保留编排器示例所需的最小能力，用于同步转发请求到专业 Agent。
+     */
     static std::string post(const std::string& url, const std::string& body) {
         CURL* curl = curl_easy_init();
         if (!curl) return "";
@@ -157,6 +173,14 @@ public:
     }
 
 private:
+    /**
+     * @brief 处理普通的 message/send 请求
+     * @param body JSON-RPC 请求体
+     * @return JSON-RPC 响应体
+     *
+     * 这个入口负责完整的同步链路：解析消息、保存上下文、识别意图、
+     * 转发到专业 Agent 或通用模型，然后把最终回复回写到历史记录。
+     */
     std::string handle_request(const std::string& body) {
         try {
             auto request_json = json::parse(body);
@@ -175,6 +199,7 @@ private:
                     }
                 }
                 
+                // context_id 同时承担会话标识和任务存储主键，确保多轮对话能复用历史。
                 std::string context_id = message.context_id().value_or("default");
                 
                 std::cout << "[Orchestrator] 收到消息: " << user_text << std::endl;
@@ -188,6 +213,7 @@ private:
                 
                 std::string response_text;
                 
+                // 编排器本身不直接处理专业问题，而是先做路由决策，再委托给下游 Agent。
                 if (intent == "math") {
                     // 动态查找 Math Agent
                     response_text = call_math_agent(user_text, context_id);
@@ -199,7 +225,7 @@ private:
                     response_text = handle_general_query(user_text, context_id);
                 }
                 
-                // 保存 Agent 响应
+                // 无论回复来自哪个下游 Agent，都统一写回 orchestrator 的会话历史。
                 auto response_msg = AgentMessage::create()
                     .with_role(MessageRole::Agent)
                     .with_context_id(context_id);
@@ -221,9 +247,17 @@ private:
     
     /**
      * @brief 处理流式请求 (message/stream)
+     * @param body JSON-RPC 请求体
+     * @param write_callback 向客户端持续写入事件的回调
+     *
+     * 事件顺序固定为：
+     * 1. stream_start
+     * 2. intent
+     * 3. 多个 chunk
+     * 4. stream_end
      * 
-     * 支持 A2A 协议的流式消息传输
-    */
+     * 这样客户端既能尽早拿到编排状态，也能逐步消费最终回答内容。
+     */
     void handle_stream_request(const std::string& body, 
                                std::function<bool(const std::string&)> write_callback) {
         try {
@@ -256,6 +290,7 @@ private:
                 }
             }
             
+            // 流式请求与普通请求复用同一份上下文，避免历史记录被拆成两个会话。
             std::string context_id = message.context_id().value_or("default");
             
             std::cout << "[Orchestrator] 收到流式消息: " << user_text << std::endl;
@@ -263,7 +298,7 @@ private:
             // 保存用户消息
             save_message(context_id, message);
             
-            // 发送开始事件
+            // 先发送开始事件，让客户端知道当前请求已进入流式处理阶段。
             json start_event = {
                 {"jsonrpc", "2.0"},
                 {"id", request.id()},
@@ -278,7 +313,7 @@ private:
             std::string intent = analyze_intent(user_text);
             std::cout << "[Orchestrator] 识别意图: " << intent << std::endl;
             
-            // 发送意图识别事件
+            // 在正文输出前先暴露意图识别结果，便于前端展示“正在路由到哪个 Agent”。
             json intent_event = {
                 {"jsonrpc", "2.0"},
                 {"id", request.id()},
@@ -300,7 +335,7 @@ private:
                 response_text = handle_general_query(user_text, context_id);
             }
             
-            // UTF-8 安全的分块函数
+            // UTF-8 安全分块，避免中文等多字节字符被切成非法片段。
             auto utf8_safe_chunk = [](const std::string& text, size_t start, size_t max_len) -> std::string {
                 if (start >= text.length()) return "";
                 
@@ -320,7 +355,7 @@ private:
                 return text.substr(start, end - start);
             };
             
-            // 流式输出：UTF-8 安全分块
+            // 分块大小保持较小，便于前端更快看到增量输出，同时又不会产生过多事件。
             const size_t chunk_size = 50;
             size_t pos = 0;
             while (pos < response_text.length()) {
@@ -338,6 +373,7 @@ private:
                     }}
                 };
                 
+                // 回调返回 false 通常意味着客户端已断开，此时应尽快停止后续发送。
                 if (!write_callback(chunk_event.dump())) {
                     std::cerr << "[Orchestrator] 流式写入失败" << std::endl;
                     return;
@@ -347,7 +383,7 @@ private:
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
             
-            // 保存 Agent 响应
+            // 只在完整结果生成后入库，避免历史记录中混入不完整的 chunk 片段。
             auto response_msg = AgentMessage::create()
                 .with_role(MessageRole::Agent)
                 .with_context_id(context_id);
@@ -381,6 +417,14 @@ private:
         }
     }
 
+    /**
+     * @brief 使用大模型做轻量意图分类
+     * @param text 用户原始输入
+     * @return math、code 或 general
+     *
+     * 这里对模型输出做包含判断，而不是要求完全等于类别名，
+     * 是为了兼容模型偶尔返回解释文本的情况。
+     */
     std::string analyze_intent(const std::string& text) {
         std::string prompt = "判断以下用户输入属于哪个类别，只回答类别名称：\n"
                             "- math: 数学计算、方程求解\n"
@@ -407,16 +451,26 @@ private:
         return call_agent_by_tag("code", query, context_id);
     }
     
+    /**
+     * @brief 按标签查找并调用下游专业 Agent
+     * @param tag 目标 Agent 标签，例如 math 或 code
+     * @param query 用户问题
+     * @param context_id 当前会话上下文
+     * @return 下游 Agent 的文本响应，失败时返回降级提示
+     *
+     * 通过注册中心按标签发现服务，而不是硬编码地址，
+     * 这样部署时可以灵活替换或扩容专业 Agent。
+     */
     std::string call_agent_by_tag(const std::string& tag, 
-                                   const std::string& query, 
-                                   const std::string& context_id) {
+                                  const std::string& query, 
+                                  const std::string& context_id) {
         try {
             // 从注册中心查找 Agent
             std::string agent_url = registry_client_.select_agent_by_tag(tag);
             
             std::cout << "[Orchestrator] 调用 " << tag << " Agent: " << agent_url << std::endl;
             
-            // 构造请求
+            // 透传原始 query 和 context_id，让下游 Agent 能继续复用同一段对话历史。
             json request = {
                 {"jsonrpc", "2.0"},
                 {"id", "1"},
@@ -431,7 +485,7 @@ private:
                 }}
             };
             
-            // 发送请求
+            // 编排器与专业 Agent 之间仍然走统一的 A2A JSON-RPC 协议。
             std::string response_body = SimpleHttpClient::post(agent_url, request.dump());
             auto response_json = json::parse(response_body);
             
@@ -441,14 +495,25 @@ private:
                 return response_json["result"]["parts"][0]["text"].get<std::string>();
             }
             
+            // 返回结构不符合预期时，不抛出内部实现细节，直接给出可理解的错误信息。
             return "无法解析响应";
             
         } catch (const std::exception& e) {
             std::cerr << "[Orchestrator] 调用 " << tag << " Agent 失败: " << e.what() << std::endl;
+            // 下游专业服务不可用时，显式告知客户端当前发生了降级。
             return "抱歉，" + tag + " 服务暂时不可用，使用通用模型回答";
         }
     }
     
+    /**
+     * @brief 处理未命中专业路由的通用问题
+     * @param query 用户问题
+     * @param context_id 当前会话上下文
+     * @return 大模型生成的回答
+     *
+     * 这里会把最近历史和 MCP 工具返回的辅助信息一起拼进提示词，
+     * 让通用模型在保留上下文的同时，尽量利用外部工具补充事实。
+     */
     std::string handle_general_query(const std::string& query, const std::string& context_id) {
         auto history = task_store_->get_history(context_id, 5);
         std::string history_text;
@@ -475,6 +540,10 @@ private:
     
     /**
      * @brief 尝试使用 MCP 工具获取辅助信息
+     * @param query 用户问题
+     * @return 适合直接拼接进提示词的工具结果文本
+     *
+     * 当前实现使用保守的启发式策略挑选工具，避免每次请求都无差别调用全部 MCP 工具。
      */
     std::string tryMCPTools(const std::string& query) {
         if (!mcp_integration_ || !mcp_integration_->isAvailable()) {
@@ -505,12 +574,14 @@ private:
             
             if (should_use) {
                 json args;
+                // 统一使用 query 作为入参，便于兼容搜索类和问答类工具。
                 args["query"] = query;
                 
                 std::cout << "[Orchestrator] 调用 MCP 工具: " << tool.name << std::endl;
                 
                 auto tool_result = mcp_integration_->callTool(tool.name, args.dump());
                 if (tool_result.success) {
+                    // 工具结果不直接暴露给用户，而是作为附加上下文交给大模型整合回答。
                     result += "[" + tool.name + "]: " + tool_result.result + "\n";
                 }
             }
@@ -519,6 +590,14 @@ private:
         return result;
     }
     
+    /**
+     * @brief 保存消息到任务存储
+     * @param context_id 会话上下文 ID
+     * @param message 待保存的消息
+     *
+     * 首次看到某个 context_id 时，会先补建运行中的任务，再追加历史消息，
+     * 这样普通请求和流式请求都可以通过同一套存储接口读取上下文。
+     */
     void save_message(const std::string& context_id, const AgentMessage& message) {
         if (!task_store_->task_exists(context_id)) {
             auto task = AgentTask::create()
@@ -597,10 +676,10 @@ int main(int argc, char* argv[]) {
     std::string redis_host = "127.0.0.1";
     int redis_port = 6379;
     
-    // 解析 MCP 配置
+    // 优先解析命令行中的 MCP 配置，便于显式覆盖默认环境变量。
     MCPAgentConfig mcp_config = parseMCPConfigFromArgs(argc, argv);
     
-    // 也尝试从环境变量获取 MCP 配置
+    // 命令行未启用 MCP 时，再回退到环境变量配置，兼容容器化部署场景。
     if (!mcp_config.enable_mcp) {
         MCPAgentConfig env_config = parseMCPConfigFromEnv();
         if (env_config.enable_mcp) {
@@ -608,7 +687,7 @@ int main(int argc, char* argv[]) {
         }
     }
     
-    // 解析其他命令行参数
+    // 其余参数由 orchestrator 自己消费，例如任务存储依赖的 Redis 连接信息。
     for (int i = 5; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--redis-host" && i + 1 < argc) {

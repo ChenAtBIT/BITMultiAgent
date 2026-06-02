@@ -86,7 +86,7 @@ namespace vx::mcp {
         entry.createFunc = (PluginAPI * (*)())GetProcAddress(entry.handle, "CreatePlugin");
         entry.destroyFunc = (void (*)(PluginAPI *))GetProcAddress(entry.handle, "DestroyPlugin");
 #else
-        entry.handle = dlopen(path.c_str(), RTLD_LAZY);
+        entry.handle = dlopen(path.c_str(), RTLD_LAZY); // 把共享库装进当前进程
         if (!entry.handle) {
             LOG(ERROR) << "Failed to load plugin: " << path << " - " << dlerror() << std::endl;
             return false;
@@ -111,7 +111,7 @@ namespace vx::mcp {
         }
 
         // Create plugin instance
-        entry.instance = entry.createFunc();
+        entry.instance = entry.createFunc(); // 拿到 PluginAPI*
 
         // Initialize the plugin
         if (!entry.instance->Initialize()) {

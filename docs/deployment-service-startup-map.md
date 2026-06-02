@@ -1,37 +1,37 @@
 # 完整部署指南服务启动地图
 
-本文不是重复一遍部署命令，而是把 `README.md` 中“完整部署指南（手动启动各组件）”涉及到的每个进程，在启动后到底做了什么、对应哪些函数、以及服务之间怎么互相连接，整理成一张运行时地图。
+本文不是重复一遍部署命令，而是把 [`README.md`](../README.md) 中“完整部署指南（手动启动各组件）”涉及到的每个进程，在启动后到底做了什么、对应哪些函数、以及服务之间怎么互相连接，整理成一张运行时地图。
 
 适用范围：
 
-- `README.md` 的手动启动步骤 1 到 6
+- [`README.md`](../README.md) 的手动启动步骤 1 到 6
 - 多 Agent 示例：`Registry Server`、`Math Agent`、`Orchestrator`
 - gRPC 前后端：`rpc_server`、`rpc_client`
 - 被 `Math Agent` / `Orchestrator` 隐式拉起的 `mcp_server`
 
 不在本文主范围内的内容：
 
-- `docs/deployment.md` 里的 systemd / Nginx 生产化部署细节
+- [`docs/deployment.md`](deployment.md) 里的 systemd / Nginx 生产化部署细节
 - 测试程序、教程示例程序
 
 ## 1. 启动清单总览
 
 | 步骤 | 进程/服务 | 是否手动启动 | 作用 | 入口 |
 |---|---|---|---|---|
-| 1 | `redis-server` | 是 | 保存任务和对话历史 | 外部服务，代码侧通过 `a2a/src/examples/redis_task_store.cpp` 连接 |
-| 2 | `ai_registry_server` | 是 | Agent 注册、发现、心跳清理 | `examples/ai_orchestrator/registry_server_main.cpp` |
-| 3 | `ai_math_agent` | 是 | 数学问题处理，调用 MCP 工具 | `examples/ai_orchestrator/math_agent_main.cpp` |
-| 4 | `ai_orchestrator` | 是 | 意图识别、路由到专业 Agent、通用问答 | `examples/ai_orchestrator/orchestrator_main.cpp` |
-| 5 | `rpc_server` | 是 | gRPC 入口，把 RPC 请求桥接到 A2A/HTTP | `server/src/main.cpp` |
-| 6 | `rpc_client` | 是 | 命令行交互入口，连 gRPC 服务 | `client/src/main.cpp` |
-| 隐式 | `mcp_server` | 否 | 被 Agent 子进程拉起，提供工具列表与工具调用 | `mcp_server_integrated/src/main.cpp` |
+| 1 | `redis-server` | 是 | 保存任务和对话历史 | 外部服务，代码侧通过 [`a2a/src/examples/redis_task_store.cpp`](../a2a/src/examples/redis_task_store.cpp) 连接 |
+| 2 | `ai_registry_server` | 是 | Agent 注册、发现、心跳清理 | [`examples/ai_orchestrator/registry_server_main.cpp`](../examples/ai_orchestrator/registry_server_main.cpp) |
+| 3 | `ai_math_agent` | 是 | 数学问题处理，调用 MCP 工具 | [`examples/ai_orchestrator/math_agent_main.cpp`](../examples/ai_orchestrator/math_agent_main.cpp) |
+| 4 | `ai_orchestrator` | 是 | 意图识别、路由到专业 Agent、通用问答 | [`examples/ai_orchestrator/orchestrator_main.cpp`](../examples/ai_orchestrator/orchestrator_main.cpp) |
+| 5 | `rpc_server` | 是 | gRPC 入口，把 RPC 请求桥接到 A2A/HTTP | [`server/src/main.cpp`](../server/src/main.cpp) |
+| 6 | `rpc_client` | 是 | 命令行交互入口，连 gRPC 服务 | [`client/src/main.cpp`](../client/src/main.cpp) |
+| 隐式 | `mcp_server` | 否 | 被 Agent 子进程拉起，提供工具列表与工具调用 | [`mcp_server_integrated/src/main.cpp`](../mcp_server_integrated/src/main.cpp) |
 
 有一个很重要的部署事实：
 
-- `README.md` 的手动部署步骤并没有单独启动 `mcp_server`。
-- `Math Agent` 和 `Orchestrator` 会各自通过 [`MCPClient::startMCPServer()`](#fn-mcpclient-startmcpserver) `fork + execv` 拉起一个本地 `mcp_server` 子进程。
+- [`README.md`](../README.md) 的手动部署步骤并没有单独启动 `mcp_server`。
+- `Math Agent` 和 `Orchestrator` 会各自通过 `MCPClient::startMCPServer()` `fork + execv` 拉起一个本地 `mcp_server` 子进程。
 - 所以完整系统里通常会出现两个 `mcp_server` 进程，而不是一个。
-- 上面这个函数名现在是一个文档内跳转示例，点击后会跳到下文对应说明。
+- 下面这份文档先只给源码文件路径加链接，函数名先保持纯文本。
 
 ## 2. 总体连接图
 
@@ -88,8 +88,8 @@ ai_orchestrator  也会连接 redis-server
 
 ### 谁会连接 Redis
 
-- `examples/ai_orchestrator/math_agent_main.cpp::MathAgent::MathAgent()`
-- `examples/ai_orchestrator/orchestrator_main.cpp::AIOrchestrator::AIOrchestrator()`
+- [`examples/ai_orchestrator/math_agent_main.cpp`](../examples/ai_orchestrator/math_agent_main.cpp) 里的 `MathAgent::MathAgent()`
+- [`examples/ai_orchestrator/orchestrator_main.cpp`](../examples/ai_orchestrator/orchestrator_main.cpp) 里的 `AIOrchestrator::AIOrchestrator()`
 
 ### Redis 在运行时的作用
 
@@ -99,7 +99,7 @@ ai_orchestrator  也会连接 redis-server
 
 ### 3.2 Registry Server
 
-入口：`examples/ai_orchestrator/registry_server_main.cpp::main()`
+入口：[`examples/ai_orchestrator/registry_server_main.cpp`](../examples/ai_orchestrator/registry_server_main.cpp) 里的 `main()`
 
 ### 启动后的主流程
 
@@ -130,7 +130,9 @@ ai_orchestrator  也会连接 redis-server
 
 ### 3.3 Math Agent
 
-入口：`examples/ai_orchestrator/math_agent_main.cpp::main()`
+入口：[`examples/ai_orchestrator/math_agent_main.cpp`](../examples/ai_orchestrator/math_agent_main.cpp) 里的 `main()`
+
+结果：Math Agent 父进程、mcp_server 子进程；启动一个心跳线程与注册中心保持连接。
 
 ### 启动后的初始化阶段
 
@@ -149,7 +151,7 @@ ai_orchestrator  也会连接 redis-server
 
 ### 为什么手动命令里没写 `--mcp-args -p ...` 也能找到插件
 
-因为 `mcp/src/mcp_client.cpp::buildEffectiveServerArgs()` 会在没有显式 `-p/--plugins` 时，自动推断：
+因为 [`mcp/src/mcp_client.cpp`](../mcp/src/mcp_client.cpp) 里的 `buildEffectiveServerArgs()` 会在没有显式 `-p/--plugins` 时，自动推断：
 
 - `mcp_server` 所在目录的同级 `plugins/`
 - 对于 `mcp_server_integrated/build/mcp_server`，推断出的目录就是 `mcp_server_integrated/build/plugins`
@@ -189,7 +191,7 @@ ai_orchestrator  也会连接 redis-server
 
 ### 3.4 Orchestrator
 
-入口：`examples/ai_orchestrator/orchestrator_main.cpp::main()`
+入口：[`examples/ai_orchestrator/orchestrator_main.cpp`](../examples/ai_orchestrator/orchestrator_main.cpp) 里的 `main()`
 
 ### 启动后的初始化阶段
 
@@ -238,7 +240,7 @@ ai_orchestrator  也会连接 redis-server
 
 ### 3.5 MCP Server（隐式子进程）
 
-入口：`mcp_server_integrated/src/main.cpp::main()`
+入口：[`mcp_server_integrated/src/main.cpp`](../mcp_server_integrated/src/main.cpp) 里的 `main()`
 
 ### 它是怎么被拉起的
 
@@ -246,13 +248,13 @@ ai_orchestrator  也会连接 redis-server
 |---|---|---|
 | Agent 连接 MCP | `MCPAgentIntegration::connectToMCPServer()` | 创建 `MCPClient` |
 | 以 STDIO 模式连接 | `MCPClient::connect()` | 默认本地模式 |
-| 真正拉起子进程 | <a id="fn-mcpclient-startmcpserver"></a>`MCPClient::startMCPServer()` | `fork + execv`，并把 stdin/stdout 重定向到管道 |
+| 真正拉起子进程 | `MCPClient::startMCPServer()` | `fork + execv`，并把 stdin/stdout 重定向到管道 |
 
 ### `mcp_server` 自己启动后做什么
 
 | 启动动作 | 对应函数 | 说明 |
 |---|---|---|
-| 解析命令行参数 | `mcp_server_integrated/src/main.cpp::main()` | 决定日志目录、插件目录、SSE/STDIO 模式 |
+| 解析命令行参数 | [`mcp_server_integrated/src/main.cpp`](../mcp_server_integrated/src/main.cpp) 里的 `main()` | 决定日志目录、插件目录、SSE/STDIO 模式 |
 | 初始化日志 | `main()` | 创建带时间戳的日志文件 |
 | 扫描并加载插件 | `vx::mcp::PluginsLoader::LoadPlugins()` | 递归加载 `.so` |
 | 初始化每个插件 | `vx::mcp::PluginsLoader::LoadPlugin()` | 调 `CreatePlugin()` 和 `Initialize()` |
@@ -269,7 +271,7 @@ ai_orchestrator  也会连接 redis-server
 
 ### 3.6 RPC Server
 
-入口：`server/src/main.cpp::main()`
+入口：[`server/src/main.cpp`](../server/src/main.cpp) 里的 `main()`
 
 proto 服务定义：
 ```
@@ -309,7 +311,7 @@ AI查询服务-AIQueryService
 
 | 启动动作 | 对应函数 | 说明 |
 |---|---|---|
-| 读取命令行和环境变量 | `server/src/main.cpp::main()` | 解析 `--port`、`--orchestrator`、`--registry` |
+| 读取命令行和环境变量 | [`server/src/main.cpp`](../server/src/main.cpp) 里的 `main()` | 解析 `--port`、`--orchestrator`、`--registry` |
 | 写入 A2A 配置 | `RpcServer::setA2AConfig()` | 把 Orchestrator URL 传给 `AIQueryService` |
 | 初始化 RPC Server | `RpcServer::initialize()` | 总入口 |
 | 初始化序列化器 | `common::MessageSerializer::initialize()` | 选择 `PROTOBUF_BINARY` |
@@ -354,7 +356,7 @@ AI查询服务-AIQueryService
 
 ### 3.7 RPC Client（严格来说不是服务，而是交互入口）
 
-入口：`client/src/main.cpp::main()`
+入口：[`client/src/main.cpp`](../client/src/main.cpp) 里的 `main()`
 
 结果：一个大循环的 REPL，用户输入问题，发送 gRPC 请求到 `rpc_server`，显示结果。
 
@@ -362,12 +364,12 @@ AI查询服务-AIQueryService
 
 | 启动动作 | 对应函数 | 说明 |
 |---|---|---|
-| 读取参数 | `client/src/main.cpp::main()` | 支持直连地址或注册中心发现 |
+| 读取参数 | [`client/src/main.cpp`](../client/src/main.cpp) 里的 `main()` | 支持直连地址或注册中心发现 |
 | 初始化 RPC 客户端 | `RpcClient::initialize()` | 初始化序列化器、熔断器、负载均衡器 |
 | 连接目标 `rpc_server` | `RpcClient::connect()` / `connectViaRegistry()` | 选出服务端地址 |
 | 建立 gRPC Channel | `RpcClient::connectToEndpoint()` -> `setupChannel()` | 建立普通 gRPC stub |
 | 建立 AI Query stub | `RpcClient::connectToEndpoint()` -> `AIQueryClient::connect()` | 建立 `AIQueryService` 的 stub |
-| 进入 REPL | `client/src/main.cpp::main()` | 循环读取用户输入 |
+| 进入 REPL | [`client/src/main.cpp`](../client/src/main.cpp) 里的 `main()` | 循环读取用户输入 |
 
 ### 发送查询时的函数链
 
@@ -382,7 +384,7 @@ AI查询服务-AIQueryService
 
 以“`1+7`”为例：
 
-1. `rpc_client` 在 `client/src/main.cpp` 收到用户输入。
+1. `rpc_client` 在 [`client/src/main.cpp`](../client/src/main.cpp) 收到用户输入。
 2. `RpcClient::aiQuery()` 调 `AIQueryClient::query()` 发起 gRPC 请求。
 3. `rpc_server` 的 `AIQueryServiceImpl::Query()` 收到请求。
 4. `A2AAdapter::processQuery()` 调 `RequestAdapter::convertToA2A()` 组装 A2A 请求。

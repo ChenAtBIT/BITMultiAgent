@@ -2,8 +2,8 @@
 
 本文基于项目当前默认交互方式分析：
 
-- 客户端使用 `build/client/rpc_client`
-- 服务端使用 `build/server/rpc_server`
+- 客户端使用 [build/client/rpc_client](/home/chen/Agent_communication/build/client/rpc_client)
+- 服务端使用 [build/server/rpc_server](/home/chen/Agent_communication/build/server/rpc_server)
 - 按默认同步模式分析，也就是没有执行 `/stream` 命令时的调用路径
 
 ---
@@ -12,7 +12,7 @@
 
 ### 1.1 服务端创建流程
 
-服务端入口在 `server/src/main.cpp`。
+服务端入口在 [server/src/main.cpp](/home/chen/Agent_communication/server/src/main.cpp)。
 
 核心创建链路如下：
 
@@ -33,15 +33,15 @@ main
 
 对应代码位置：
 
-- `server/src/main.cpp:137-156`
-- `server/src/rpc_server.cpp:74-95`
-- `server/src/ai_query_service.cpp:29-51`
-- `a2a_adapter/src/a2a_adapter.cpp:29-49`
-- `server/src/rpc_server.cpp:222-267`
+- [server/src/main.cpp](/home/chen/Agent_communication/server/src/main.cpp:137):137-156
+- [server/src/rpc_server.cpp](/home/chen/Agent_communication/server/src/rpc_server.cpp:74):74-95
+- [server/src/ai_query_service.cpp](/home/chen/Agent_communication/server/src/ai_query_service.cpp:29):29-51
+- [a2a_adapter/src/a2a_adapter.cpp](/home/chen/Agent_communication/a2a_adapter/src/a2a_adapter.cpp:29):29-49
+- [server/src/rpc_server.cpp](/home/chen/Agent_communication/server/src/rpc_server.cpp:222):222-267
 
 ### 1.2 客户端创建流程
 
-客户端入口在 `client/src/main.cpp`。
+客户端入口在 [client/src/main.cpp](/home/chen/Agent_communication/client/src/main.cpp)。
 
 核心创建链路如下：
 
@@ -58,14 +58,14 @@ main
 
 对应代码位置：
 
-- `client/src/main.cpp:162-193`
-- `client/src/rpc_client.cpp:712-750`
-- `client/src/rpc_client.cpp:590-620`
-- `client/src/ai_query_client.cpp:25-60`
+- [client/src/main.cpp](/home/chen/Agent_communication/client/src/main.cpp:162):162-193
+- [client/src/rpc_client.cpp](/home/chen/Agent_communication/client/src/rpc_client.cpp:712):712-750
+- [client/src/rpc_client.cpp](/home/chen/Agent_communication/client/src/rpc_client.cpp:590):590-620
+- [client/src/ai_query_client.cpp](/home/chen/Agent_communication/client/src/ai_query_client.cpp:25):25-60
 
-创建完成后，用户输入会从 `client/src/main.cpp` 的主循环进入：
+创建完成后，用户输入会从 [client/src/main.cpp](/home/chen/Agent_communication/client/src/main.cpp) 的主循环进入：
 
-- `client/src/main.cpp:202-291`
+- [client/src/main.cpp](/home/chen/Agent_communication/client/src/main.cpp:202):202-291
 
 ---
 
@@ -100,7 +100,7 @@ main
 
 1. 客户端读取用户输入。
 
-   `client/src/main.cpp:254-289` 中，输入 `"你好"` 后会走同步分支：
+   [client/src/main.cpp](/home/chen/Agent_communication/client/src/main.cpp:254):254-289 中，输入 `"你好"` 后会走同步分支：
 
    ```text
    client.aiQuery(line, context_id, timeout_seconds)
@@ -108,7 +108,7 @@ main
 
 2. `RpcClient::aiQuery` 转发到 `AIQueryClient`。
 
-   `client/src/rpc_client.cpp:842-874`
+   [client/src/rpc_client.cpp](/home/chen/Agent_communication/client/src/rpc_client.cpp:842):842-874
 
    核心调用：
 
@@ -119,7 +119,7 @@ main
 
 3. `AIQueryClient::query` 构造 `AIQueryRequest` 并发起 gRPC 调用。
 
-   `client/src/ai_query_client.cpp:80-153`
+   [client/src/ai_query_client.cpp](/home/chen/Agent_communication/client/src/ai_query_client.cpp:80):80-153
 
    核心调用：
 
@@ -131,7 +131,7 @@ main
 
 4. 服务端 `AIQueryServiceImpl::Query` 接收请求。
 
-   `server/src/ai_query_service.cpp:71-138`
+   [server/src/ai_query_service.cpp](/home/chen/Agent_communication/server/src/ai_query_service.cpp:71):71-138
 
    核心调用：
 
@@ -142,8 +142,8 @@ main
 
 5. `A2AAdapter` 把 RPC 请求转换成 A2A 请求。
 
-   `a2a_adapter/src/a2a_adapter.cpp:61-126`
-   `a2a_adapter/src/request_adapter.cpp:18-42`
+   [a2a_adapter/src/a2a_adapter.cpp](/home/chen/Agent_communication/a2a_adapter/src/a2a_adapter.cpp:61):61-126
+   [a2a_adapter/src/request_adapter.cpp](/home/chen/Agent_communication/a2a_adapter/src/request_adapter.cpp:18):18-42
 
    核心调用：
 
@@ -155,7 +155,7 @@ main
 
 6. A2A 客户端把请求发给 Orchestrator。
 
-   `a2a/src/client/a2a_client.cpp:79-103`
+   [a2a/src/client/a2a_client.cpp](/home/chen/Agent_communication/a2a/src/client/a2a_client.cpp:79):79-103
 
    核心调用：
 
@@ -167,7 +167,7 @@ main
 
 7. Orchestrator 收到 `message/send` 请求并解析用户文本。
 
-   `examples/ai_orchestrator/orchestrator_main.cpp:160-220`
+   [examples/ai_orchestrator/orchestrator_main.cpp](/home/chen/Agent_communication/examples/ai_orchestrator/orchestrator_main.cpp:160):160-220
 
    核心调用：
 
@@ -180,7 +180,7 @@ main
 
 8. Orchestrator 识别意图，`"你好"` 会进入通用对话分支。
 
-   `examples/ai_orchestrator/orchestrator_main.cpp:384-400`
+   [examples/ai_orchestrator/orchestrator_main.cpp](/home/chen/Agent_communication/examples/ai_orchestrator/orchestrator_main.cpp:384):384-400
 
    核心调用：
 
@@ -192,7 +192,7 @@ main
 
 9. 通用对话由 `handle_general_query` 处理。
 
-   `examples/ai_orchestrator/orchestrator_main.cpp:452-480`
+   [examples/ai_orchestrator/orchestrator_main.cpp](/home/chen/Agent_communication/examples/ai_orchestrator/orchestrator_main.cpp:452):452-480
 
    核心调用：
 
@@ -205,7 +205,7 @@ main
 
 10. Orchestrator 生成 A2A 响应并返回。
 
-    `examples/ai_orchestrator/orchestrator_main.cpp:202-211`
+    [examples/ai_orchestrator/orchestrator_main.cpp](/home/chen/Agent_communication/examples/ai_orchestrator/orchestrator_main.cpp:202):202-211
 
     核心调用：
 
@@ -217,7 +217,7 @@ main
 
 11. 服务端把 A2A 响应转换回 RPC 响应。
 
-    `a2a_adapter/src/response_adapter.cpp:17-76`
+    [a2a_adapter/src/response_adapter.cpp](/home/chen/Agent_communication/a2a_adapter/src/response_adapter.cpp:17):17-76
 
     核心调用：
 
@@ -228,7 +228,7 @@ main
 
 12. 客户端拿到结果并打印。
 
-    `client/src/main.cpp:279-288`
+    [client/src/main.cpp](/home/chen/Agent_communication/client/src/main.cpp:279):279-288
 
     核心调用：
 
@@ -299,10 +299,10 @@ main
 
 1. 客户端输入和 gRPC 请求发起阶段不变。
 
-   复用的核心函数仍然是：
+   复用的核心函数起点仍然在 [client/src/main.cpp](/home/chen/Agent_communication/client/src/main.cpp)：
 
    ```text
-   client/src/main.cpp -> RpcClient::aiQuery
+   RpcClient::aiQuery
    -> AIQueryClient::query
    -> stub_->Query
    -> AIQueryServiceImpl::Query
@@ -312,8 +312,8 @@ main
 
 2. Orchestrator 收到请求后先做意图识别。
 
-   `examples/ai_orchestrator/orchestrator_main.cpp:185-200`
-   `examples/ai_orchestrator/orchestrator_main.cpp:384-400`
+   [examples/ai_orchestrator/orchestrator_main.cpp](/home/chen/Agent_communication/examples/ai_orchestrator/orchestrator_main.cpp:185):185-200
+   [examples/ai_orchestrator/orchestrator_main.cpp](/home/chen/Agent_communication/examples/ai_orchestrator/orchestrator_main.cpp:384):384-400
 
    数学表达式通常会被识别为 `math`：
 
@@ -325,8 +325,8 @@ main
 
 3. Orchestrator 进入数学 Agent 分支。
 
-   `examples/ai_orchestrator/orchestrator_main.cpp:191-193`
-   `examples/ai_orchestrator/orchestrator_main.cpp:402-449`
+   [examples/ai_orchestrator/orchestrator_main.cpp](/home/chen/Agent_communication/examples/ai_orchestrator/orchestrator_main.cpp:191):191-193
+   [examples/ai_orchestrator/orchestrator_main.cpp](/home/chen/Agent_communication/examples/ai_orchestrator/orchestrator_main.cpp:402):402-449
 
    核心调用：
 
@@ -337,8 +337,8 @@ main
 
 4. Orchestrator 通过注册中心发现 Math Agent。
 
-   `a2a/include/a2a/examples/registry_client.hpp:90-106`
-   `a2a/include/a2a/examples/registry_client.hpp:59-73`
+   [a2a/include/a2a/examples/registry_client.hpp](/home/chen/Agent_communication/a2a/include/a2a/examples/registry_client.hpp:90):90-106
+   [a2a/include/a2a/examples/registry_client.hpp](/home/chen/Agent_communication/a2a/include/a2a/examples/registry_client.hpp:59):59-73
 
    核心调用：
 
@@ -350,7 +350,7 @@ main
 
 5. Orchestrator 通过 HTTP/A2A 把同一条用户消息转发给 Math Agent。
 
-   `examples/ai_orchestrator/orchestrator_main.cpp:419-441`
+   [examples/ai_orchestrator/orchestrator_main.cpp](/home/chen/Agent_communication/examples/ai_orchestrator/orchestrator_main.cpp:419):419-441
 
    核心调用：
 
@@ -360,7 +360,7 @@ main
 
 6. Math Agent 接收 `message/send` 请求。
 
-   `examples/ai_orchestrator/math_agent_main.cpp:119-163`
+   [examples/ai_orchestrator/math_agent_main.cpp](/home/chen/Agent_communication/examples/ai_orchestrator/math_agent_main.cpp:119):119-163
 
    核心调用：
 
@@ -374,7 +374,7 @@ main
 
 7. `solve_math` 会优先尝试 MCP 计算能力。
 
-   `examples/ai_orchestrator/math_agent_main.cpp:272-303`
+   [examples/ai_orchestrator/math_agent_main.cpp](/home/chen/Agent_communication/examples/ai_orchestrator/math_agent_main.cpp:272):272-303
 
    核心调用：
 
@@ -386,7 +386,7 @@ main
 
 8. `tryMCPCalculation` 会优先找 `calculator` 工具。
 
-   `examples/ai_orchestrator/math_agent_main.cpp:310-368`
+   [examples/ai_orchestrator/math_agent_main.cpp](/home/chen/Agent_communication/examples/ai_orchestrator/math_agent_main.cpp:310):310-368
 
    关键逻辑：
 
@@ -410,8 +410,8 @@ main
 
 9. Math Agent 将工具结果作为参考，再调用大模型组织最终回答。
 
-   `examples/ai_orchestrator/math_agent_main.cpp:294-302`
-   `a2a/include/a2a/examples/qwen_client.hpp:35-84`
+   [examples/ai_orchestrator/math_agent_main.cpp](/home/chen/Agent_communication/examples/ai_orchestrator/math_agent_main.cpp:294):294-302
+   [a2a/include/a2a/examples/qwen_client.hpp](/home/chen/Agent_communication/a2a/include/a2a/examples/qwen_client.hpp:35):35-84
 
    核心调用：
 
@@ -429,7 +429,7 @@ main
 
 10. Math Agent 返回 A2A 响应给 Orchestrator。
 
-    `examples/ai_orchestrator/math_agent_main.cpp:147-154`
+    [examples/ai_orchestrator/math_agent_main.cpp](/home/chen/Agent_communication/examples/ai_orchestrator/math_agent_main.cpp:147):147-154
 
     核心调用：
 
@@ -441,7 +441,7 @@ main
 
 11. Orchestrator 从 Math Agent 响应中提取文本，并作为自己的响应返回。
 
-    `examples/ai_orchestrator/orchestrator_main.cpp:438-444`
+    [examples/ai_orchestrator/orchestrator_main.cpp](/home/chen/Agent_communication/examples/ai_orchestrator/orchestrator_main.cpp:438):438-444
 
     核心调用：
 
