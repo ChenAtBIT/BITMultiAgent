@@ -138,7 +138,7 @@ int main(int argc, char* argv[]) {
     RpcServer server;
     g_server = &server;
     
-    server.setA2AConfig(a2a_config);
+    server.setA2AConfig(a2a_config); // 把 Orchestrator URL 传给 AIQueryService
     
     LOG_INFO("正在初始化 RPC Server...");
     

@@ -469,6 +469,7 @@ ls mcp_server_integrated/build/mcp_server
 
 ```bash
 # 终端 1: Registry Server (Agent 注册中心)
+# Agent_communication/examples/ai_orchestrator/registry_server_main.cpp
 ./build/examples/ai_orchestrator/ai_registry_server 8500
 
 # 输出:
@@ -480,6 +481,7 @@ ls mcp_server_integrated/build/mcp_server
 
 ```bash
 # 终端 2: Math Agent (数学计算专业 Agent + MCP 工具 + RAG 智能工具选择)
+# Agent_communication/examples/ai_orchestrator/math_agent_main.cpp
 ./build/examples/ai_orchestrator/ai_math_agent \
     math-1 \
     5001 \
@@ -510,6 +512,7 @@ ls mcp_server_integrated/build/mcp_server
 
 ```bash
 # 终端 3: Orchestrator (协调器 + MCP 工具 + RAG 智能工具选择)
+# Agent_communication/examples/ai_orchestrator/orchestrator_main.cpp
 ./build/examples/ai_orchestrator/ai_orchestrator \
     orch-1 \
     5000 \
@@ -562,6 +565,7 @@ ls mcp_server_integrated/build/mcp_server
 
 ```bash
 # 终端 5: RPC Client (用户客户端)
+# Agent_communication/client/src/main.cpp
 ./build/client/rpc_client
 
 # 输出:

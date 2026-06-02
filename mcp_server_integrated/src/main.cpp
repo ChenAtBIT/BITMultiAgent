@@ -36,32 +36,55 @@
 
 using namespace popl;
 
+/**
+ * @brief 全局 MCP 服务器实例，供信号处理和插件通知回调复用。
+ */
 std::shared_ptr<vx::mcp::Server> server;
 
+/**
+ * @brief 保存通知发送过程中需要共享的同步对象。
+ */
 struct NotificationState {
+    /// 串行化插件到客户端的通知发送，避免多线程并发访问服务器。
     std::mutex serverNotificationMutex;
 };
 NotificationState notificationState;
 
-/// stop handler Ctrl+C
+/**
+ * @brief 处理 Ctrl+C 中断信号并安全停止服务器。
+ * @param s 捕获到的信号编号，当前主要用于处理 SIGINT。
+ */
 void stop_handler(sig_atomic_t s) {
+    // 当前实现只注册了 SIGINT，这里显式忽略参数值本身。
+    (void)s;
     std::cout <<"Stopping server..." << std::endl;
     if (server && server->IsValid()) {
+        // 当服务器仍处于有效状态时，先触发停止流程再退出进程。
         server->Stop();
     }
     std::cout << "done." << std::endl;
     exit(0);
 }
 
-/// Notification Implementation from plugins to mcp-client
+/**
+ * @brief 将插件侧产生的通知转发给当前连接的 MCP 客户端。
+ * @param pluginName 发送通知的插件名称。
+ * @param notification 插件生成的通知内容。
+ */
 void ClientNotificationCallbackImpl(const char* pluginName, const char* notification) {
+    // 通过互斥锁确保多插件并发发送通知时不会发生交叉写入。
     std::lock_guard<std::mutex> lock(notificationState.serverNotificationMutex);
     if (server && server->IsValid()) {
         server->SendNotification(pluginName, notification);
     }
 }
 
-/// main entry point
+/**
+ * @brief 程序主入口，负责初始化传输层、日志、插件与 MCP 服务。
+ * @param argc 命令行参数个数。
+ * @param argv 命令行参数数组。
+ * @return 成功返回 0，参数解析失败时返回 -1。
+ */
 int main(int argc, char **argv) {
     std::string name;
     std::string plugins_directory;
@@ -73,16 +96,16 @@ int main(int argc, char **argv) {
     server = std::make_shared<vx::mcp::Server>();
 
     //============================================================================================
-    // setup signal handler (Ctrl+C)
+    // 注册 Ctrl+C 信号处理函数，确保终止时能够主动停止服务器。
     //============================================================================================
     signal(SIGINT, stop_handler);
 
     //============================================================================================
-    // setup command line options
+    // 配置命令行参数，允许外部指定服务名、插件目录、日志目录和传输模式。
     //============================================================================================
     OptionParser op("Allowed options");
     auto help_option = op.add<Switch>("", "help", "produce help message");
-    auto name_option = op.add<Value<std::string>>("n", "name", "the name of the server", "mcp-server");
+    auto name_option = op.add<Value<std::string>>("n", "name", "the name of the server", "mcp-server"); // 默认服务器名称为 "mcp-server"，用户可通过 -n 参数覆盖。
     auto plugins_directory_option = op.add<Value<std::string>>("p", "plugins", "the directory where to load the plugins", "./plugins");
     auto logs_directory_option = op.add<Value<std::string>>("l", "logs", "the directory where to store the logs", "./logs");
     auto verbose_option = op.add<Value<bool>>("v", "verbose", "enable verbose", verbose);
@@ -93,7 +116,7 @@ int main(int argc, char **argv) {
     verbose_option->assign_to(&verbose);
 
     //============================================================================================
-    // parse options
+    // 解析命令行参数；若用户请求帮助或参数非法，则直接返回。
     //============================================================================================
     try {
         op.parse(argc, argv);
@@ -110,7 +133,7 @@ int main(int argc, char **argv) {
     }
 
     //============================================================================================
-    // setup transport
+    // 根据命令行参数选择传输层：SSE 用于网络服务，默认使用标准输入输出模式。
     //============================================================================================
     if (use_sse_server->is_set()) {
         transport = std::make_shared<vx::transport::SSE>();
@@ -119,22 +142,22 @@ int main(int argc, char **argv) {
     }
 
     //============================================================================================
-    // setup logger
+    // 初始化日志系统，并为日志文件名追加 UTC 时间戳，便于区分不同运行实例。
     //============================================================================================
-    // Get the current time as ISO 8601 string
+    // 将当前时间格式化为 ISO 8601 风格字符串，作为日志文件名的一部分。
     auto now = std::chrono::system_clock::now();
     auto time_t_now = std::chrono::system_clock::to_time_t(now);
     std::stringstream ss;
     ss << std::put_time(std::gmtime(&time_t_now), "%Y-%m-%dT%H-%M-%S");
     std::string iso_date = ss.str();
 
-    // Concatenate ISO date to logname
+    // 组合日志目录和时间戳，生成本次启动对应的日志文件路径。
     std::string logFilename = logs_directory + "/mcp-server_" + iso_date + ".log";
     auto sink_file = std::make_shared<AixLog::SinkFile>(AixLog::Severity::trace, logFilename);
     AixLog::Log::init({sink_file});
 
     //============================================================================================
-    // print logo and info
+    // 输出启动横幅和运行信息，方便定位当前版本、传输方式和监听端口。
     //============================================================================================
     LOG(INFO) << " __  __  _____ _____        _____ ______ _______      ________ _____  " << std::endl;
     LOG(INFO) << "|  \\/  |/ ____|  __ \\      / ____|  ____|  __ \\ \\    / /  ____|  __ \\ " << std::endl;
@@ -146,14 +169,14 @@ int main(int argc, char **argv) {
     LOG(INFO) << "Press Ctrl+C to exit." << std::endl;
 
     //============================================================================================
-    // load all plugins from the plugins directory
+    // 从指定插件目录加载全部插件，后续的 tools、prompts、resources 均由插件提供。
     //============================================================================================
     if (loader->LoadPlugins(plugins_directory)) {
         LOG(INFO) << "Successfully loaded plugins" << std::endl;
     }
 
     //============================================================================================
-    // enable notification system
+    // 为每个插件注入通知系统，使插件能够主动向 MCP 客户端推送消息。
     //============================================================================================
     for (auto& plugin : loader->GetPlugins()) {
         plugin.instance->notifications = new NotificationSystem();
@@ -161,7 +184,7 @@ int main(int argc, char **argv) {
     }
 
     //============================================================================================
-    // start server
+    // 配置服务器基础信息，并注册 MCP 标准方法对应的处理回调。
     //============================================================================================
     server->Name(name);
     server->VerboseLevel(verbose ? 1 : 0);
@@ -169,6 +192,7 @@ int main(int argc, char **argv) {
         nlohmann::ordered_json response = MCPBuilder::Response(request);
         response["result"]["tools"] = json::array();
 
+        // 遍历工具类插件，将每个插件暴露的工具元信息转换为 MCP 返回结构。
         for (const auto& plugin : loader->GetPlugins()) {
             if (plugin.instance->GetType() == PLUGIN_TYPE_TOOLS) {
                 for (int i = 0; i < plugin.instance->GetToolCount(); i++) {
@@ -187,8 +211,10 @@ int main(int argc, char **argv) {
     server->OverrideCallback("tools/call", [&loader](const json& request) {
         nlohmann::ordered_json response = MCPBuilder::Response(request);
 
+        // 插件返回的是动态分配的 C 字符串，这里在解析完成后负责释放。
         char* res_ptr = nullptr;
 
+        // 在所有工具插件中查找目标工具，并将完整请求转交给对应插件处理。
         for (const auto& plugin : loader->GetPlugins()) {
             if (plugin.instance->GetType() == PLUGIN_TYPE_TOOLS) {
                 for (int i = 0; i < plugin.instance->GetToolCount(); i++) {
@@ -197,14 +223,16 @@ int main(int argc, char **argv) {
                         res_ptr = plugin.instance->HandleRequest(request.dump().c_str());
                         if (res_ptr) {
                             try {
+                                // 插件返回的内容应当是合法 JSON；解析后补充统一的错误标记。
                                 response["result"] = json::parse(res_ptr);
                                 response["result"]["isError"] = false;
                             } catch (const json::parse_error& e) {
+                                // 当插件返回格式错误时，向客户端返回统一的文本错误信息。
                                 response["result"]["isError"] = true;
                                 response["result"]["content"] = json::array();
                                 response["result"]["content"].push_back({{"type", "text"}, {"text", "Plugin returned malformed data."}});
                             }
-                            // --- Free the allocated memory ---
+                            // 释放插件分配的返回缓冲区，避免内存泄漏。
                             delete[] res_ptr;
                         } else {
                             LOG(ERROR) << "Plugin " << pluginTool->name << " returned nullptr." << std::endl;
@@ -215,7 +243,7 @@ int main(int argc, char **argv) {
             }
         }
 
-        // 未找到匹配的工具，返回错误
+        // 未找到匹配的工具时，按 MCP 内容格式构造错误响应。
         response["result"]["isError"] = true;
         response["result"]["content"] = json::array();
         response["result"]["content"].push_back({
@@ -228,6 +256,7 @@ int main(int argc, char **argv) {
         nlohmann::ordered_json response = MCPBuilder::Response(request);
         response["result"]["prompts"] = json::array();
 
+        // 聚合所有提示词插件暴露的 Prompt 描述信息。
         for (const auto& plugin : loader->GetPlugins()) {
             if (plugin.instance->GetType() == PLUGIN_TYPE_PROMPTS) {
                 for (int i = 0; i < plugin.instance->GetPromptCount(); i++) {
@@ -246,8 +275,10 @@ int main(int argc, char **argv) {
     server->OverrideCallback("prompts/get", [&loader](const json& request) {
         nlohmann::ordered_json response = MCPBuilder::Response(request);
 
+        // 插件返回的是动态分配的内容，需要在当前回调中接管释放责任。
         char* res_ptr = nullptr;
 
+        // 查找名称匹配的 Prompt，并将原始请求交给插件生成具体内容。
         for (const auto& plugin : loader->GetPlugins()) {
             if (plugin.instance->GetType() == PLUGIN_TYPE_PROMPTS) {
                 for (int i = 0; i < plugin.instance->GetPromptCount(); i++) {
@@ -259,9 +290,9 @@ int main(int argc, char **argv) {
                                 response["result"] = json::parse(res_ptr);
                             } catch (const json::parse_error& e) {
                                 LOG(ERROR) << "Plugin " << pluginPrompt->name << " returned malformed data." << std::endl;
-                                // TODO: how can we handle error here ?
+                                // TODO: 这里尚未向客户端返回结构化错误，仅记录日志。
                             }
-                            // --- Free the allocated memory ---
+                            // 释放插件返回的堆内存，避免重复请求后积累泄漏。
                             delete[] res_ptr;
                         }
                     }
@@ -276,6 +307,7 @@ int main(int argc, char **argv) {
         nlohmann::ordered_json response = MCPBuilder::Response(request);
         response["result"]["resources"] = json::array();
 
+        // 收集资源类插件暴露的资源清单，供客户端后续按 URI 读取。
         for (const auto& plugin : loader->GetPlugins()) {
             if (plugin.instance->GetType() == PLUGIN_TYPE_RESOURCES) {
                 for (int i = 0; i < plugin.instance->GetResourceCount(); i++) {
@@ -295,8 +327,10 @@ int main(int argc, char **argv) {
     server->OverrideCallback("resources/read", [&loader](const json& request) {
         nlohmann::ordered_json response = MCPBuilder::Response(request);
 
+        // 插件返回的内容为堆内存，需要在当前函数中完成释放。
         char* res_ptr = nullptr;
 
+        // 根据客户端请求的 URI 查找对应资源，并由插件完成实际读取。
         for (const auto& plugin : loader->GetPlugins()) {
             if (plugin.instance->GetType() == PLUGIN_TYPE_RESOURCES) {
                 for (int i = 0; i < plugin.instance->GetResourceCount(); i++) {
@@ -308,9 +342,9 @@ int main(int argc, char **argv) {
                                 response["result"] = json::parse(res_ptr);
                             } catch (const json::parse_error& e) {
                                 LOG(ERROR) << "Plugin " << pluginResource->name << " returned malformed data." << std::endl;
-                                // TODO: how can we handle error here ?
+                                // TODO: 这里尚未向客户端返回结构化错误，仅记录日志。
                             }
-                            // --- Free the allocated memory ---
+                            // 释放插件返回的堆内存，避免资源读取路径发生泄漏。
                             delete[] res_ptr;
                         }
                     }
@@ -321,6 +355,7 @@ int main(int argc, char **argv) {
         return response;
     });
 
+    // 启动传输层并进入服务循环，后续请求将由以上回调接管处理。
     server->Connect(transport);
 
     return 0;

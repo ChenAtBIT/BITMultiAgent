@@ -79,7 +79,7 @@ private:
     std::thread server_thread_;  // 服务器运行线程
     std::shared_ptr<AgentCommunicationServiceImpl> service_impl_;
     std::shared_ptr<HealthServiceImpl> health_service_impl_;
-    std::shared_ptr<AIQueryServiceImpl> ai_query_service_impl_;
+    std::shared_ptr<AIQueryServiceImpl> ai_query_service_impl_; // proto 服务定义：AI查询服务-AIQueryService
     
     // A2A配置
     a2a_adapter::A2AConfig a2a_config_;

@@ -75,10 +75,10 @@ bool RpcServer::initialize(const common::RpcConfig& config) {
     config_ = config;
     address_ = config.server_address;
     
-    // 创建服务实现
-    service_impl_ = std::make_shared<AgentCommunicationServiceImpl>();
-    health_service_impl_ = std::make_shared<HealthServiceImpl>();
-    ai_query_service_impl_ = std::make_shared<AIQueryServiceImpl>();
+    // 创建 rcp-proto 服务实现
+    service_impl_ = std::make_shared<AgentCommunicationServiceImpl>(); // Agent 通信服务
+    health_service_impl_ = std::make_shared<HealthServiceImpl>(); // 健康检查服务
+    ai_query_service_impl_ = std::make_shared<AIQueryServiceImpl>(); // AI查询服务
     
     // 初始化序列化器
     common::MessageSerializer::getInstance().initialize(common::SerializerFactory::PROTOBUF_BINARY);
