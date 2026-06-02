@@ -29,8 +29,9 @@
 有一个很重要的部署事实：
 
 - `README.md` 的手动部署步骤并没有单独启动 `mcp_server`。
-- `Math Agent` 和 `Orchestrator` 会各自通过 `MCPClient::startMCPServer()` `fork + execv` 拉起一个本地 `mcp_server` 子进程。
+- `Math Agent` 和 `Orchestrator` 会各自通过 [`MCPClient::startMCPServer()`](#fn-mcpclient-startmcpserver) `fork + execv` 拉起一个本地 `mcp_server` 子进程。
 - 所以完整系统里通常会出现两个 `mcp_server` 进程，而不是一个。
+- 上面这个函数名现在是一个文档内跳转示例，点击后会跳到下文对应说明。
 
 ## 2. 总体连接图
 
@@ -245,7 +246,7 @@ ai_orchestrator  也会连接 redis-server
 |---|---|---|
 | Agent 连接 MCP | `MCPAgentIntegration::connectToMCPServer()` | 创建 `MCPClient` |
 | 以 STDIO 模式连接 | `MCPClient::connect()` | 默认本地模式 |
-| 真正拉起子进程 | `MCPClient::startMCPServer()` | `fork + execv`，并把 stdin/stdout 重定向到管道 |
+| 真正拉起子进程 | <a id="fn-mcpclient-startmcpserver"></a>`MCPClient::startMCPServer()` | `fork + execv`，并把 stdin/stdout 重定向到管道 |
 
 ### `mcp_server` 自己启动后做什么
 
@@ -276,6 +277,31 @@ proto 服务定义：
 健康检查服务-HealthService
 AI查询服务-AIQueryService
 ```
+
+### `RpcServer::setupServer()` 注册的 gRPC 服务一览
+
+| 注册服务名 | RPC 方法 | 关键请求参数 | 作用 |
+|---|---|---|---|
+| `AIQueryService` | `Query(AIQueryRequest)` | `request_id`、`question`、`context_id`、`history_length`、`timeout_seconds`、`metadata`、`preference` | 当前主链路入口。接收一次完整 AI 问答请求，经 `A2AAdapter` 转发给 `ai_orchestrator`，再把最终答案组装成 `AIQueryResponse` 返回。 |
+| `AIQueryService` | `QueryStream(AIQueryRequest)` | 同 `Query()` | 流式问答入口。把请求桥接到 A2A 流式接口，持续返回 `AIStreamEvent`，适合边生成边展示。 |
+| `AIQueryService` | `GetQueryStatus(QueryStatusRequest)` | `task_id` 或 `context_id` | 设计上用于查询任务状态；但当前实现没有状态仓库，返回的是 `unavailable` / `UNIMPLEMENTED` 语义。 |
+| `AgentCommunicationService` | `SendMessage(SendMessageRequest)` | `message`、`target_agent`、`timeout_seconds` | 向指定 Agent 的内存消息队列投递一条消息。 |
+| `AgentCommunicationService` | `ReceiveMessage(ReceiveMessageRequest)` | `agent_id`、`max_messages`、`timeout_seconds` | 从指定 Agent 的内存消息队列拉取消息；当前实现主要按 `agent_id` 和 `max_messages` 工作。 |
+| `AgentCommunicationService` | `BroadcastMessage(BroadcastMessageRequest)` | `message`、`target_agents`、`exclude_sender` | 向多个 Agent 广播消息；`target_agents` 为空时广播给全部已注册 Agent。当前实现未实际使用 `exclude_sender`。 |
+| `AgentCommunicationService` | `GetAgents(GetAgentsRequest)` | `filter`、`limit`、`offset` | 返回当前 `rpc_server` 内存里维护的 Agent 列表，可按服务名子串过滤并分页。 |
+| `AgentCommunicationService` | `RegisterAgent(RegisterAgentRequest)` | `agent_info(service_name/version/host/port/tags/metadata)`、`heartbeat_interval` | 向 `rpc_server` 的内存注册表登记一个 Agent，并生成 `agent_id=service_name-host-port`。当前实现未实际使用 `heartbeat_interval`。 |
+| `AgentCommunicationService` | `UnregisterAgent(UnregisterAgentRequest)` | `agent_id`、`reason` | 从 `rpc_server` 的内存注册表移除指定 Agent。 |
+| `AgentCommunicationService` | `Heartbeat(HeartbeatRequest)` | `agent_id`、`agent_info` | 刷新指定 Agent 的最后心跳时间，防止被离线清理线程移除。当前实现只使用 `agent_id`。 |
+| `AgentCommunicationService` | `ListenMessages(ReceiveMessageRequest)` | `agent_id`、`timeout_seconds` | 服务端流式接口。持续监听指定 Agent 的消息队列，直到超时或客户端取消。 |
+| `AgentCommunicationService` | `BatchSendMessages(stream SendMessageRequest)` | 流里的每个元素都包含 `message`、`target_agent`、`timeout_seconds` | 客户端流式批量投递消息，最终返回一次汇总结果。 |
+| `AgentCommunicationService` | `RealTimeCommunication(stream Message)` | 流里的每个元素都是 `Message(id/type/content/timestamp/headers/payload)` | 双向流式实时通信接口；当前实现还是 echo back 占位逻辑，读到什么就回写什么。 |
+| `HealthService` | `Check(HealthCheckRequest)` | `service` | 单次健康检查，返回 `SERVING` / `NOT_SERVING`；当前实现并未区分具体 `service` 名字。 |
+| `HealthService` | `Watch(HealthCheckRequest)` | `service` | 流式健康检查，每 5 秒返回一次健康状态，直到客户端取消。 |
+
+补充说明：
+
+- 当前 `rpc_client` 走的主业务链路基本只会用到 `AIQueryService`。
+- `AgentCommunicationService` 和 `HealthService` 更像是 `rpc_server` 暴露出来的通用基础能力，其中一部分方法目前还是内存态或占位实现。
 
 结果：启动一个 gRPC Server（子线程），监听来自 `rpc_client` 的请求，把它们桥接成 A2A 请求发给 `Orchestrator`。
 
