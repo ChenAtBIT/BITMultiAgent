@@ -240,7 +240,7 @@ std::string ToolRetriever::toFunctionCallingFormat(const std::vector<RetrievedTo
     json functions = json::array();
     
     for (const auto& tool : tools) {
-        json func = {
+        json function_body = {
             {"name", tool.name},
             {"description", tool.description}
         };
@@ -248,15 +248,19 @@ std::string ToolRetriever::toFunctionCallingFormat(const std::vector<RetrievedTo
         // 解析 input_schema
         if (!tool.input_schema.empty()) {
             try {
-                func["parameters"] = json::parse(tool.input_schema);
+                function_body["parameters"] = json::parse(tool.input_schema);
             } catch (...) {
-                func["parameters"] = json::object();
+                function_body["parameters"] = json::object();
             }
         } else {
-            func["parameters"] = json::object();
+            function_body["parameters"] = json::object();
         }
         
-        functions.push_back(func);
+        // 直接输出兼容 Chat Completions 的 tools 结构。
+        functions.push_back({
+            {"type", "function"},
+            {"function", std::move(function_body)}
+        });
     }
     
     return functions.dump(2);

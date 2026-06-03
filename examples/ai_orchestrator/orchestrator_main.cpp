@@ -656,7 +656,7 @@ private:
                 std::cout << "[Orchestrator] 收到消息: " << user_text << std::endl;
                 
                 // 保存用户消息
-                save_message(context_id, message);
+                //save_message(context_id, message);
                 
                 // 识别意图
                 std::string intent = analyze_intent(user_text);
@@ -666,10 +666,8 @@ private:
                 
                 // 编排器本身不直接处理专业问题，而是先做路由决策，再委托给下游 Agent。
                 if (intent == "math") {
-                    std::string math_query = rewrite_math_query_for_agent(user_text, context_id);
-                    std::cout << "[Orchestrator] Math Agent 输入: " << math_query << std::endl;
-                    // 动态查找 Math Agent
-                    response_text = call_math_agent(math_query, context_id);
+                    // 数学请求改写和工具调用都由 Math Agent 自主完成，编排器只负责路由。
+                    response_text = call_math_agent(user_text, context_id);
                 } else if (intent == "code") {
                     // 动态查找 Code Agent
                     response_text = call_code_agent(user_text, context_id);
@@ -683,7 +681,7 @@ private:
                     .with_role(MessageRole::Agent)
                     .with_context_id(context_id);
                 response_msg.add_text_part(response_text);
-                save_message(context_id, response_msg);
+                //save_message(context_id, response_msg);
                 
                 // 返回响应
                 auto response = JsonRpcResponse::create_success(request.id(), response_msg.to_json());
@@ -749,7 +747,7 @@ private:
             std::cout << "[Orchestrator] 收到流式消息: " << user_text << std::endl;
             
             // 保存用户消息
-            save_message(context_id, message);
+            //save_message(context_id, message);
             
             // 先发送开始事件，让客户端知道当前请求已进入流式处理阶段。
             json start_event = {
@@ -781,9 +779,8 @@ private:
             std::string response_text;
             
             if (intent == "math") {
-                std::string math_query = rewrite_math_query_for_agent(user_text, context_id);
-                std::cout << "[Orchestrator] Math Agent 输入: " << math_query << std::endl;
-                response_text = call_math_agent(math_query, context_id);
+                // 数学请求改写和工具调用都由 Math Agent 自主完成，编排器只负责路由。
+                response_text = call_math_agent(user_text, context_id);
             } else if (intent == "code") {
                 response_text = call_code_agent(user_text, context_id);
             } else {
@@ -843,7 +840,7 @@ private:
                 .with_role(MessageRole::Agent)
                 .with_context_id(context_id);
             response_msg.add_text_part(response_text);
-            save_message(context_id, response_msg);
+            //save_message(context_id, response_msg);
             
             // 发送完成事件
             json complete_event = {
@@ -919,54 +916,6 @@ private:
         return "general";
     }
 
-    /**
-     * @brief 将数学请求改写为更适合 Math Agent 的输入
-     * @param text 用户原始输入
-     * @param context_id 当前会话上下文
-     * @return 规范化后的数学请求
-     */
-    std::string rewrite_math_query_for_agent(const std::string& text,
-                                             const std::string& context_id) {
-        std::string expression = extract_direct_math_expression(text);
-        if (!expression.empty()) {
-            return expression;
-        }
-
-        std::string history_text = build_history_text(context_id, 4);
-        std::string system_prompt =
-            "你是 AI Orchestrator 的数学请求改写器。"
-            "请把当前用户输入改写成适合交给 Math Agent 的单条文本。\n"
-            "改写规则：\n"
-            "1. 保留全部数学条件、数字、变量、单位和约束。\n"
-            "2. 删除寒暄、客套和与数学无关的描述。\n"
-            "3. 如果本质上是直接计算题，只输出可以直接求值的表达式，例如 1+1、(3+5)*2、sin(pi/2)。\n"
-            "4. 如果是方程、化简、求导、积分、几何、概率统计等任务，输出一句简洁明确的数学任务，例如“求解方程 x^2-4=0”。\n"
-            "5. 如果当前输入是追问，请结合最近对话补全省略条件，输出自包含文本。\n"
-            "6. 只输出改写结果，不要解释，不要 Markdown，不要额外前缀。";
-
-        if (!history_text.empty()) {
-            system_prompt += "\n\n最近对话:\n" + history_text;
-        }
-
-        try {
-            std::string rewritten =
-                sanitize_single_line_output(qwen_client_.chat(system_prompt, text));
-            if (rewritten.empty()) {
-                return text;
-            }
-
-            std::string rewritten_expression = extract_direct_math_expression(rewritten);
-            if (!rewritten_expression.empty()) {
-                return rewritten_expression;
-            }
-
-            return rewritten;
-        } catch (const std::exception& e) {
-            std::cerr << "[Orchestrator] 数学请求改写失败: " << e.what() << std::endl;
-            return text;
-        }
-    }
-    
     std::string call_math_agent(const std::string& query, const std::string& context_id) {
         return call_agent_by_tag("math", query, context_id);
     }
@@ -994,7 +943,7 @@ private:
             
             std::cout << "[Orchestrator] 调用 " << tag << " Agent: " << agent_url << std::endl;
             
-            // 透传当前 query 和 context_id；对于 Math Agent，这里的 query 可能已经过规范化改写。
+            // 透传当前 query 和 context_id；专业 Agent 会自行决定是否改写请求或调用工具。
             json request = {
                 {"jsonrpc", "2.0"},
                 {"id", "1"},
@@ -1030,76 +979,170 @@ private:
     }
     
     /**
+     * @brief 构造通用问答使用的系统提示词
+     * @param context_id 当前会话上下文
+     * @return 拼接好历史信息的系统提示词
+     */
+    std::string build_general_system_prompt(const std::string& context_id) {
+        std::string system_prompt =
+            "你是一个严谨、友好的中文助手。"
+            "当提供的工具能帮助你获得更准确的事实时，请主动调用工具；"
+            "如果不需要工具，就直接回答用户。"
+            "拿到工具结果后，请基于工具返回内容给出最终答复。";
+
+        const std::string history_text = build_history_text(context_id, 5);
+        if (!history_text.empty()) {
+            system_prompt += "\n\n最近对话历史：\n" + history_text;
+        }
+
+        return system_prompt;
+    }
+
+    /**
+     * @brief 将 MCP 工具转换为通义千问 tools 定义
+     * @param query 用户当前问题
+     * @return 提供给模型的工具定义列表
+     */
+    std::vector<QwenToolDefinition> build_mcp_tool_definitions(const std::string& query) {
+        std::vector<QwenToolDefinition> tool_definitions;
+        if (!mcp_integration_ || !mcp_integration_->isAvailable()) {
+            return tool_definitions;
+        }
+
+        const auto relevant_tools = mcp_integration_->getRelevantTools(query);
+        tool_definitions.reserve(relevant_tools.size());
+
+        for (const auto& tool : relevant_tools) {
+            tool_definitions.push_back({
+                tool.name,
+                tool.description,
+                tool.input_schema
+            });
+        }
+
+        return tool_definitions;
+    }
+
+    /**
+     * @brief 构造统一的工具错误结果
+     * @param tool_name 工具名称
+     * @param error_message 错误信息
+     * @return 可直接回填给模型的 JSON 文本
+     */
+    static std::string build_tool_error_payload(const std::string& tool_name,
+                                                const std::string& error_message) {
+        json payload = {
+            {"tool", tool_name},
+            {"success", false},
+            {"error", error_message}
+        };
+        return payload.dump();
+    }
+
+    /**
+     * @brief 执行模型请求的单次工具调用
+     * @param tool_call 模型返回的工具调用描述
+     * @return 需要回填给模型的工具输出文本
+     */
+    std::string execute_model_tool_call(const QwenToolCall& tool_call) {
+        if (!mcp_integration_ || !mcp_integration_->isAvailable()) {
+            return build_tool_error_payload(tool_call.name, "MCP is not available");
+        }
+        if (tool_call.name.empty()) {
+            return build_tool_error_payload("<empty>", "Tool name is empty");
+        }
+
+        const std::string arguments_json = trim(tool_call.arguments_json);
+        if (arguments_json.empty()) {
+            return build_tool_error_payload(tool_call.name, "Tool arguments are empty");
+        }
+
+        try {
+            // 先校验模型返回的 arguments 是否为合法 JSON，避免底层被动退化成空对象。
+            const json validated_arguments = json::parse(arguments_json);
+            (void)validated_arguments;
+        } catch (const std::exception& e) {
+            return build_tool_error_payload(
+                tool_call.name,
+                "Tool arguments are not valid JSON: " + std::string(e.what()));
+        }
+
+        std::cout << "[Orchestrator] 模型请求 MCP 工具: "
+                  << tool_call.name
+                  << " args=" << arguments_json << std::endl;
+
+        const auto tool_result = mcp_integration_->callTool(tool_call.name, arguments_json);
+        if (!tool_result.success) {
+            return build_tool_error_payload(tool_call.name, tool_result.error);
+        }
+
+        if (tool_result.result.empty()) {
+            json payload = {
+                {"tool", tool_call.name},
+                {"success", true},
+                {"result", ""}
+            };
+            return payload.dump();
+        }
+
+        return tool_result.result;
+    }
+
+    /**
      * @brief 处理未命中专业路由的通用问题
      * @param query 用户问题
      * @param context_id 当前会话上下文
      * @return 大模型生成的回答
      *
-     * 这里会把最近历史和 MCP 工具返回的辅助信息一起拼进提示词，
-     * 让通用模型在保留上下文的同时，尽量利用外部工具补充事实。
+     * 新链路把工具选择权交给模型：代码只负责提供 tools、
+     * 执行模型请求的工具调用，并把工具结果回填给下一轮消息。
      */
     std::string handle_general_query(const std::string& query, const std::string& context_id) {
-        std::string history_text = build_history_text(context_id, 5);
-        
-        // 尝试使用 MCP 工具增强回答
-        std::string tool_context = tryMCPTools(query);
-        if (!tool_context.empty()) {
-            history_text += "\n工具辅助信息:\n" + tool_context;
+        std::vector<QwenMessage> messages = {
+            QwenMessage{"system", build_general_system_prompt(context_id), "", "", {}},
+            QwenMessage{"user", query, "", "", {}}
+        };
+
+        const auto tools = build_mcp_tool_definitions(query);
+        if (tools.empty()) {
+            return qwen_client_.chat_completion(messages).content;
         }
-        
-        return qwen_client_.chat(history_text, query);
-    }
-    
-    /**
-     * @brief 尝试使用 MCP 工具获取辅助信息
-     * @param query 用户问题
-     * @return 适合直接拼接进提示词的工具结果文本
-     *
-     * 当前实现使用保守的启发式策略挑选工具，避免每次请求都无差别调用全部 MCP 工具。
-     */
-    std::string tryMCPTools(const std::string& query) {
-        if (!mcp_integration_ || !mcp_integration_->isAvailable()) {
-            return "";
-        }
-        
-        std::string result;
-        auto tools = mcp_integration_->getAvailableTools();
-        
-        // 根据查询内容选择合适的工具
-        for (const auto& tool : tools) {
-            // 简单的关键词匹配来决定是否使用工具
-            bool should_use = false;
-            
-            if (tool.name.find("search") != std::string::npos ||
-                tool.name.find("query") != std::string::npos) {
-                // 搜索类工具
-                should_use = true;
-            } else if (tool.name.find("time") != std::string::npos ||
-                       tool.name.find("date") != std::string::npos) {
-                // 时间类工具
-                if (query.find("时间") != std::string::npos ||
-                    query.find("日期") != std::string::npos ||
-                    query.find("time") != std::string::npos) {
-                    should_use = true;
+
+        constexpr int kMaxToolRounds = 5;
+        for (int round = 0; round < kMaxToolRounds; ++round) {
+            const QwenChatResult round_result = qwen_client_.chat_completion(messages, tools);
+
+            if (round_result.tool_calls.empty()) {
+                if (!round_result.content.empty()) {
+                    return round_result.content;
                 }
+                return "抱歉，我暂时无法生成有效回答。";
             }
-            
-            if (should_use) {
-                json args;
-                // 统一使用 query 作为入参，便于兼容搜索类和问答类工具。
-                args["query"] = query;
-                
-                std::cout << "[Orchestrator] 调用 MCP 工具: " << tool.name << std::endl;
-                
-                auto tool_result = mcp_integration_->callTool(tool.name, args.dump());
-                if (tool_result.success) {
-                    // 工具结果不直接暴露给用户，而是作为附加上下文交给大模型整合回答。
-                    result += "[" + tool.name + "]: " + tool_result.result + "\n";
-                }
+
+            // 把模型本轮的 tool_calls 作为 assistant 消息回填，供下一轮继续推理。
+            messages.push_back(QwenMessage{
+                "assistant",
+                round_result.content,
+                "",
+                "",
+                round_result.tool_calls
+            });
+
+            for (const auto& tool_call : round_result.tool_calls) {
+                const std::string tool_output = execute_model_tool_call(tool_call);
+
+                // 每个工具结果都用 tool 消息单独回填，让模型自行决定是否继续调用工具。
+                messages.push_back(QwenMessage{
+                    "tool",
+                    tool_output,
+                    tool_call.name,
+                    tool_call.id,
+                    {}
+                });
             }
         }
-        
-        return result;
+
+        return "抱歉，工具调用轮次过多，我暂时没能完成这次请求。";
     }
     
     /**
