@@ -28,11 +28,14 @@
 
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
+#include <algorithm>
+#include <cctype>
 #include <iostream>
 #include <memory>
 #include <sstream>
 #include <thread>
 #include <chrono>
+#include <vector>
 
 using namespace a2a;
 using json = nlohmann::json;
@@ -174,6 +177,454 @@ public:
 
 private:
     /**
+     * @brief 去掉字符串首尾空白字符
+     * @param text 待清理文本
+     * @return 去除首尾空白后的结果
+     */
+    static std::string trim(const std::string& text) {
+        size_t start = 0;
+        while (start < text.size() &&
+               std::isspace(static_cast<unsigned char>(text[start]))) {
+            start++;
+        }
+
+        size_t end = text.size();
+        while (end > start &&
+               std::isspace(static_cast<unsigned char>(text[end - 1]))) {
+            end--;
+        }
+
+        return text.substr(start, end - start);
+    }
+
+    /**
+     * @brief 生成仅对 ASCII 字母做小写化的副本
+     * @param text 原始文本
+     * @return 小写化后的文本
+     */
+    static std::string to_lower_copy(const std::string& text) {
+        std::string lowered = text;
+        std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+            [](unsigned char ch) {
+                return static_cast<char>(std::tolower(ch));
+            });
+        return lowered;
+    }
+
+    /**
+     * @brief 判断字符串是否以前缀开头
+     * @param text 待检查文本
+     * @param prefix 前缀
+     * @return true 表示命中
+     */
+    static bool starts_with(const std::string& text, const std::string& prefix) {
+        return text.size() >= prefix.size() &&
+               text.compare(0, prefix.size(), prefix) == 0;
+    }
+
+    /**
+     * @brief 判断字符串是否以后缀结尾
+     * @param text 待检查文本
+     * @param suffix 后缀
+     * @return true 表示命中
+     */
+    static bool ends_with(const std::string& text, const std::string& suffix) {
+        return text.size() >= suffix.size() &&
+               text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
+    }
+
+    /**
+     * @brief 替换字符串中的全部目标片段
+     * @param text 待修改文本
+     * @param from 待替换片段
+     * @param to 替换内容
+     */
+    static void replace_all(std::string& text, const std::string& from, const std::string& to) {
+        if (from.empty()) {
+            return;
+        }
+
+        size_t pos = 0;
+        while ((pos = text.find(from, pos)) != std::string::npos) {
+            text.replace(pos, from.size(), to);
+            pos += to.size();
+        }
+    }
+
+    /**
+     * @brief 检查文本是否包含任一关键词
+     * @param text 待检查文本
+     * @param keywords 关键词列表
+     * @return true 表示至少命中一个关键词
+     */
+    static bool contains_any(const std::string& text,
+                             const std::vector<std::string>& keywords) {
+        for (const auto& keyword : keywords) {
+            if (!keyword.empty() && text.find(keyword) != std::string::npos) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @brief 统一常见数学符号写法
+     * @param text 用户输入
+     * @return 做过基础符号归一化的文本
+     */
+    static std::string normalize_math_symbols(const std::string& text) {
+        std::string normalized = text;
+
+        replace_all(normalized, "（", "(");
+        replace_all(normalized, "）", ")");
+        replace_all(normalized, "【", "[");
+        replace_all(normalized, "】", "]");
+        replace_all(normalized, "＋", "+");
+        replace_all(normalized, "－", "-");
+        replace_all(normalized, "—", "-");
+        replace_all(normalized, "–", "-");
+        replace_all(normalized, "×", "*");
+        replace_all(normalized, "÷", "/");
+        replace_all(normalized, "＝", "=");
+        replace_all(normalized, "％", "%");
+        replace_all(normalized, "，", ",");
+        replace_all(normalized, "：", ":");
+        replace_all(normalized, "；", ";");
+        replace_all(normalized, "？", "?");
+        replace_all(normalized, "。", ".");
+        replace_all(normalized, "\t", " ");
+
+        return normalized;
+    }
+
+    /**
+     * @brief 判断是否存在明显的编程上下文
+     * @param text 用户输入
+     * @return true 表示更像代码类问题
+     */
+    static bool is_likely_code_query(const std::string& text) {
+        const std::string normalized = normalize_math_symbols(text);
+        const std::string lower_text = to_lower_copy(normalized);
+
+        const std::vector<std::string> code_keywords = {
+            "代码", "编程", "脚本", "报错", "编译", "调试", "接口", "sdk",
+            "python", "java", "javascript", "typescript", "c++", "c#", "golang",
+            "rust", "sql", "html", "css", "json", "yaml", "docker", "api",
+            "bug", "debug", "#include", "println", "printf", "cout", "def ",
+            "class ", "public ", "private ", "select "
+        };
+
+        if (contains_any(lower_text, code_keywords)) {
+            return true;
+        }
+
+        if (normalized.find("```") != std::string::npos ||
+            normalized.find("#include") != std::string::npos ||
+            normalized.find("::") != std::string::npos) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * @brief 判断字符是否属于可直接求值的表达式字符
+     * @param ch 单个字符
+     * @return true 表示可接受
+     */
+    static bool is_expression_char(unsigned char ch) {
+        return std::isdigit(ch) ||
+               std::isalpha(ch) ||
+               std::isspace(ch) ||
+               ch == '+' || ch == '-' || ch == '*' || ch == '/' ||
+               ch == '^' || ch == '%' || ch == '=' || ch == '.' ||
+               ch == ',' || ch == '(' || ch == ')' || ch == '[' ||
+               ch == ']' || ch == '{' || ch == '}' || ch == ':' ||
+               ch == '!' || ch == '<' || ch == '>' || ch == '|';
+    }
+
+    /**
+     * @brief 判断文本是否更像日期而不是数学表达式
+     * @param text 待判断文本
+     * @return true 表示命中常见日期格式
+     */
+    static bool is_date_like_text(const std::string& text) {
+        const std::string candidate = trim(text);
+        for (char separator : {'-', '/'}) {
+            if (std::count(candidate.begin(), candidate.end(), separator) != 2) {
+                continue;
+            }
+
+            std::vector<std::string> parts;
+            std::stringstream stream(candidate);
+            std::string part;
+            while (std::getline(stream, part, separator)) {
+                parts.push_back(trim(part));
+            }
+
+            if (parts.size() != 3) {
+                continue;
+            }
+
+            bool all_numeric = true;
+            for (const auto& item : parts) {
+                if (item.empty() || item.size() > 4) {
+                    all_numeric = false;
+                    break;
+                }
+                for (unsigned char ch : item) {
+                    if (!std::isdigit(ch)) {
+                        all_numeric = false;
+                        break;
+                    }
+                }
+                if (!all_numeric) {
+                    break;
+                }
+            }
+
+            if (!all_numeric) {
+                continue;
+            }
+
+            // 年份通常会是 4 位，这里优先排除 yyyy-mm-dd 和 mm-dd-yyyy 这类日期写法。
+            if (parts[0].size() == 4 || parts[2].size() == 4) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @brief 尝试从用户输入里提取可直接交给计算器的表达式
+     * @param text 用户输入
+     * @return 提取成功时返回表达式，否则返回空字符串
+     */
+    static std::string extract_direct_math_expression(const std::string& text) {
+        std::string candidate = trim(normalize_math_symbols(text));
+        const std::string original_candidate = candidate;
+        if (candidate.empty()) {
+            return "";
+        }
+
+        const std::vector<std::string> prefixes = {
+            "请帮我计算", "帮我计算", "请帮我算一下", "帮我算一下",
+            "请帮我算下", "帮我算下", "请计算", "计算一下", "计算下",
+            "计算", "算一下", "算下", "算", "求值", "求一下", "求",
+            "请问", "麻烦你", "麻烦", "帮我", "可以帮我"
+        };
+        const std::vector<std::string> suffixes = {
+            "等于多少", "是多少", "结果是多少", "结果是几", "等于几",
+            "结果", "对吗", "可以吗", "?", ".", "!"
+        };
+
+        bool changed = false;
+        bool stripped_prefix = true;
+        while (stripped_prefix) {
+            stripped_prefix = false;
+            for (const auto& prefix : prefixes) {
+                if (starts_with(candidate, prefix)) {
+                    candidate = trim(candidate.substr(prefix.size()));
+                    stripped_prefix = true;
+                    changed = true;
+                    break;
+                }
+            }
+        }
+
+        replace_all(candidate, "加上", "+");
+        replace_all(candidate, "加", "+");
+        replace_all(candidate, "减去", "-");
+        replace_all(candidate, "减", "-");
+        replace_all(candidate, "乘以", "*");
+        replace_all(candidate, "乘上", "*");
+        replace_all(candidate, "乘", "*");
+        replace_all(candidate, "除以", "/");
+        replace_all(candidate, "除", "/");
+
+        bool stripped_suffix = true;
+        while (stripped_suffix) {
+            stripped_suffix = false;
+            candidate = trim(candidate);
+            for (const auto& suffix : suffixes) {
+                if (ends_with(candidate, suffix)) {
+                    candidate = trim(candidate.substr(0, candidate.size() - suffix.size()));
+                    stripped_suffix = true;
+                    changed = true;
+                    break;
+                }
+            }
+        }
+
+        if (starts_with(candidate, ":")) {
+            candidate = trim(candidate.substr(1));
+            changed = true;
+        }
+
+        if (candidate.empty() || candidate.find("```") != std::string::npos) {
+            return "";
+        }
+
+        if (is_date_like_text(candidate)) {
+            return "";
+        }
+
+        size_t digit_count = 0;
+        size_t alpha_count = 0;
+        size_t operator_count = 0;
+        for (unsigned char ch : candidate) {
+            if (ch >= 128) {
+                return "";
+            }
+            if (!is_expression_char(ch)) {
+                return "";
+            }
+            if (std::isdigit(ch)) {
+                digit_count++;
+            }
+            if (std::isalpha(ch)) {
+                alpha_count++;
+            }
+            if (ch == '+' || ch == '-' || ch == '*' || ch == '/' ||
+                ch == '^' || ch == '%' || ch == '=' || ch == '(' ||
+                ch == ')' || ch == '[' || ch == ']') {
+                operator_count++;
+            }
+        }
+
+        const std::string lower_candidate = to_lower_copy(candidate);
+        const bool contains_math_function = contains_any(lower_candidate, {
+            "sqrt", "sin", "cos", "tan", "log", "ln", "pi"
+        });
+        const bool looks_like_expression = operator_count > 0 || contains_math_function;
+        const bool math_request_wrapped = changed || candidate != original_candidate;
+
+        if (digit_count == 0 && alpha_count == 0) {
+            return "";
+        }
+        if (!looks_like_expression && !math_request_wrapped) {
+            return "";
+        }
+
+        return trim(candidate);
+    }
+
+    /**
+     * @brief 基于规则判断是否明显属于数学问题
+     * @param text 用户输入
+     * @return true 表示高概率应路由到 Math Agent
+     */
+    static bool is_likely_math_query(const std::string& text) {
+        if (is_likely_code_query(text)) {
+            return false;
+        }
+
+        if (!extract_direct_math_expression(text).empty()) {
+            return true;
+        }
+
+        const std::string normalized = normalize_math_symbols(text);
+        const std::string lower_text = to_lower_copy(normalized);
+        const std::vector<std::string> math_keywords = {
+            "数学", "计算", "算一下", "算下", "求值", "求解", "方程", "代数",
+            "几何", "概率", "统计", "导数", "积分", "极限", "矩阵", "函数值",
+            "根号", "平方根", "均值", "方差", "math", "calculate", "calc",
+            "compute", "equation", "solve", "derivative", "integral", "matrix",
+            "probability", "mean", "variance"
+        };
+        if (contains_any(lower_text, math_keywords)) {
+            return true;
+        }
+
+        size_t digit_count = 0;
+        size_t operator_count = 0;
+        for (unsigned char ch : normalized) {
+            if (std::isdigit(ch)) {
+                digit_count++;
+            }
+            if (ch == '+' || ch == '-' || ch == '*' || ch == '/' ||
+                ch == '^' || ch == '%' || ch == '=' || ch == '(' ||
+                ch == ')' || ch == '[' || ch == ']') {
+                operator_count++;
+            }
+        }
+
+        return digit_count > 0 &&
+               operator_count > 0 &&
+               !is_date_like_text(trim(normalized));
+    }
+
+    /**
+     * @brief 提取模型输出中的首条有效结果
+     * @param text 模型原始回复
+     * @return 单行、去前缀后的文本
+     */
+    static std::string sanitize_single_line_output(const std::string& text) {
+        std::string sanitized = trim(text);
+        if (sanitized.empty()) {
+            return "";
+        }
+
+        replace_all(sanitized, "```", "");
+
+        std::istringstream stream(sanitized);
+        std::string line;
+        while (std::getline(stream, line)) {
+            line = trim(line);
+            if (!line.empty()) {
+                sanitized = line;
+                break;
+            }
+        }
+
+        const std::vector<std::string> prefixes = {
+            "改写后:", "改写后：", "输出:", "输出：", "结果:", "结果：",
+            "规范化后:", "规范化后：", "math:", "Math:"
+        };
+        for (const auto& prefix : prefixes) {
+            if (starts_with(sanitized, prefix)) {
+                sanitized = trim(sanitized.substr(prefix.size()));
+                break;
+            }
+        }
+
+        if (!sanitized.empty() &&
+            (sanitized.front() == '"' || sanitized.front() == '\'' || sanitized.front() == '`')) {
+            sanitized.erase(sanitized.begin());
+        }
+        if (!sanitized.empty() &&
+            (sanitized.back() == '"' || sanitized.back() == '\'' || sanitized.back() == '`')) {
+            sanitized.pop_back();
+        }
+
+        return trim(sanitized);
+    }
+
+    /**
+     * @brief 读取最近几条历史消息并拼成可读文本
+     * @param context_id 会话上下文
+     * @param limit 最多读取的消息数
+     * @return 历史文本
+     */
+    std::string build_history_text(const std::string& context_id, size_t limit) {
+        auto history = task_store_->get_history(context_id, limit);
+        std::string history_text;
+        for (const auto& msg : history) {
+            std::string role_str = to_string(msg.role());
+            std::string text;
+            if (!msg.parts().empty()) {
+                auto text_part = dynamic_cast<TextPart*>(msg.parts()[0].get());
+                if (text_part) {
+                    text = text_part->text();
+                }
+            }
+            history_text += role_str + ": " + text + "\n";
+        }
+        return history_text;
+    }
+
+    /**
      * @brief 处理普通的 message/send 请求
      * @param body JSON-RPC 请求体
      * @return JSON-RPC 响应体
@@ -215,8 +666,10 @@ private:
                 
                 // 编排器本身不直接处理专业问题，而是先做路由决策，再委托给下游 Agent。
                 if (intent == "math") {
+                    std::string math_query = rewrite_math_query_for_agent(user_text, context_id);
+                    std::cout << "[Orchestrator] Math Agent 输入: " << math_query << std::endl;
                     // 动态查找 Math Agent
-                    response_text = call_math_agent(user_text, context_id);
+                    response_text = call_math_agent(math_query, context_id);
                 } else if (intent == "code") {
                     // 动态查找 Code Agent
                     response_text = call_code_agent(user_text, context_id);
@@ -328,7 +781,9 @@ private:
             std::string response_text;
             
             if (intent == "math") {
-                response_text = call_math_agent(user_text, context_id);
+                std::string math_query = rewrite_math_query_for_agent(user_text, context_id);
+                std::cout << "[Orchestrator] Math Agent 输入: " << math_query << std::endl;
+                response_text = call_math_agent(math_query, context_id);
             } else if (intent == "code") {
                 response_text = call_code_agent(user_text, context_id);
             } else {
@@ -426,21 +881,90 @@ private:
      * 是为了兼容模型偶尔返回解释文本的情况。
      */
     std::string analyze_intent(const std::string& text) {
-        std::string prompt = "判断以下用户输入属于哪个类别，只回答类别名称：\n"
-                            "- math: 数学计算、方程求解\n"
-                            "- code: 编程、代码相关\n"
-                            "- general: 其他对话\n\n"
-                            "用户输入: " + text;
-        
-        std::string result = qwen_client_.chat("", prompt);
-        
-        if (result.find("math") != std::string::npos) {
-            return "math";
-        }
-        if (result.find("code") != std::string::npos) {
+        if (is_likely_code_query(text)) {
             return "code";
         }
+
+        if (is_likely_math_query(text)) {
+            return "math";
+        }
+
+        const std::string system_prompt =
+            "你是 AI Orchestrator 的意图分类器。"
+            "你只能从 math、code、general 三个标签中选择一个，并且只输出标签本身。\n"
+            "分类规则：\n"
+            "1. math：数学计算、表达式求值、方程、几何、概率统计、微积分，以及像“1+1”、“计算1+1”、“(3+5)*2”、“解 x^2-4=0”这类输入。\n"
+            "2. code：编程、代码解释、报错排查、脚本、SQL、接口、开发工具，以及在明确编程语境中讨论表达式。\n"
+            "3. general：其他普通对话。\n"
+            "如果同时出现数学表达式和明显编程语境，例如“C++里 1+1 的结果”或“写代码计算 1+1”，优先返回 code。\n"
+            "输出要求：只能输出一个小写标签，不要解释，不要标点。";
+
+        try {
+            std::string result = to_lower_copy(
+                sanitize_single_line_output(qwen_client_.chat(system_prompt, text)));
+
+            if (result.find("math") != std::string::npos) {
+                return "math";
+            }
+            if (result.find("code") != std::string::npos) {
+                return "code";
+            }
+            if (result.find("general") != std::string::npos) {
+                return "general";
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[Orchestrator] 意图识别模型调用失败: " << e.what() << std::endl;
+        }
+
         return "general";
+    }
+
+    /**
+     * @brief 将数学请求改写为更适合 Math Agent 的输入
+     * @param text 用户原始输入
+     * @param context_id 当前会话上下文
+     * @return 规范化后的数学请求
+     */
+    std::string rewrite_math_query_for_agent(const std::string& text,
+                                             const std::string& context_id) {
+        std::string expression = extract_direct_math_expression(text);
+        if (!expression.empty()) {
+            return expression;
+        }
+
+        std::string history_text = build_history_text(context_id, 4);
+        std::string system_prompt =
+            "你是 AI Orchestrator 的数学请求改写器。"
+            "请把当前用户输入改写成适合交给 Math Agent 的单条文本。\n"
+            "改写规则：\n"
+            "1. 保留全部数学条件、数字、变量、单位和约束。\n"
+            "2. 删除寒暄、客套和与数学无关的描述。\n"
+            "3. 如果本质上是直接计算题，只输出可以直接求值的表达式，例如 1+1、(3+5)*2、sin(pi/2)。\n"
+            "4. 如果是方程、化简、求导、积分、几何、概率统计等任务，输出一句简洁明确的数学任务，例如“求解方程 x^2-4=0”。\n"
+            "5. 如果当前输入是追问，请结合最近对话补全省略条件，输出自包含文本。\n"
+            "6. 只输出改写结果，不要解释，不要 Markdown，不要额外前缀。";
+
+        if (!history_text.empty()) {
+            system_prompt += "\n\n最近对话:\n" + history_text;
+        }
+
+        try {
+            std::string rewritten =
+                sanitize_single_line_output(qwen_client_.chat(system_prompt, text));
+            if (rewritten.empty()) {
+                return text;
+            }
+
+            std::string rewritten_expression = extract_direct_math_expression(rewritten);
+            if (!rewritten_expression.empty()) {
+                return rewritten_expression;
+            }
+
+            return rewritten;
+        } catch (const std::exception& e) {
+            std::cerr << "[Orchestrator] 数学请求改写失败: " << e.what() << std::endl;
+            return text;
+        }
     }
     
     std::string call_math_agent(const std::string& query, const std::string& context_id) {
@@ -470,7 +994,7 @@ private:
             
             std::cout << "[Orchestrator] 调用 " << tag << " Agent: " << agent_url << std::endl;
             
-            // 透传原始 query 和 context_id，让下游 Agent 能继续复用同一段对话历史。
+            // 透传当前 query 和 context_id；对于 Math Agent，这里的 query 可能已经过规范化改写。
             json request = {
                 {"jsonrpc", "2.0"},
                 {"id", "1"},
@@ -515,19 +1039,7 @@ private:
      * 让通用模型在保留上下文的同时，尽量利用外部工具补充事实。
      */
     std::string handle_general_query(const std::string& query, const std::string& context_id) {
-        auto history = task_store_->get_history(context_id, 5);
-        std::string history_text;
-        for (const auto& msg : history) {
-            std::string role_str = to_string(msg.role());
-            std::string text;
-            if (!msg.parts().empty()) {
-                auto text_part = dynamic_cast<TextPart*>(msg.parts()[0].get());
-                if (text_part) {
-                    text = text_part->text();
-                }
-            }
-            history_text += role_str + ": " + text + "\n";
-        }
+        std::string history_text = build_history_text(context_id, 5);
         
         // 尝试使用 MCP 工具增强回答
         std::string tool_context = tryMCPTools(query);

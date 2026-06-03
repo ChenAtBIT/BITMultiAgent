@@ -1,4 +1,7 @@
-# 注释风格规范
+# 项目
+请直接在本项目执行编译和测试。
+
+## 注释风格规范
 1. 函数注释：
 ```cpp
 /**
@@ -25,3 +28,23 @@ if (condition) {
 ```
 
 3. 要对关键代码行进行注释，使用中文注释。
+
+# 编译
+- 请直接在本项目执行编译
+- 1. 编译主项目
+```bash
+# 项目根目录创建构建目录
+cd build
+
+# 配置并编译
+cmake ..
+make -j$(nproc)
+```
+
+- 2. 编译 MCP Server (可选，用于工具调用)
+```bash
+cd mcp_server_integrated
+cd build
+cmake ..
+make -j$(nproc)
+```

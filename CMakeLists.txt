@@ -47,7 +47,8 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/client/include)
 # 设置编译选项
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -O2")
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -DDEBUG")
+    # protobuf 生成代码里存在 DEBUG 枚举值，避免与全局 DEBUG 宏冲突。
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
 endif()
 
 # 查找CURL依赖 (A2A模块需要)
