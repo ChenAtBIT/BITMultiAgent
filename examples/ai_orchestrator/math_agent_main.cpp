@@ -162,9 +162,6 @@ private:
                 
                 std::cout << "[MathAgent] 收到数学问题: " << user_text << std::endl;
                 
-                // 保存用户消息
-                save_message(context_id, message);
-                
                 // 使用 AI 解决数学问题
                 std::string response_text = solve_math(user_text, context_id);
                 
@@ -173,7 +170,6 @@ private:
                     .with_role(MessageRole::Agent)
                     .with_context_id(context_id);
                 response_msg.add_text_part(response_text);
-                save_message(context_id, response_msg);
                 
                 auto response = JsonRpcResponse::create_success(request.id(), response_msg.to_json());
                 return response.to_json();
@@ -227,9 +223,6 @@ private:
             
             std::cout << "[MathAgent] 收到流式数学问题: " << user_text << std::endl;
             
-            // 保存用户消息
-            save_message(context_id, message);
-            
             // 先发送 stream_start，让调用方可以建立本次流式会话状态。
             json start_event = {
                 {"jsonrpc", "2.0"},
@@ -271,7 +264,6 @@ private:
                 .with_role(MessageRole::Agent)
                 .with_context_id(context_id);
             response_msg.add_text_part(response_text);
-            save_message(context_id, response_msg);
             
             // 最终事件携带完整消息对象，方便兼容依赖最终落盘消息的调用方。
             json complete_event = {
@@ -334,7 +326,9 @@ private:
             system_prompt += "\n\n工具计算结果参考:\n" + tool_result;
         }
         
-        return qwen_client_.chat(system_prompt + "\n\n历史对话:\n" + history_text, question);
+        auto qury_str = system_prompt + "\n\n历史对话:\n" + history_text;
+        std::cout << "[MathAgent] 调用 LLM，发送 Query 内容: " << qury_str << std::endl;
+        return qwen_client_.chat(qury_str, question);
     }
     
     /**
