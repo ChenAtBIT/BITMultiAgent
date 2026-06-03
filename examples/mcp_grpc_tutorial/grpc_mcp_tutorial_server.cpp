@@ -307,8 +307,8 @@ void printUsage(const char* program) {
     std::cout << "用法：\n"
               << "  " << program << " <mcp_server_path> [grpc_port] [plugins_dir]\n\n"
               << "示例：\n"
-              << "  " << program << " ./build/mcp_server_integrated/mcp_server\n"
-              << "  " << program << " ./build/mcp_server_integrated/mcp_server 50071 ./build/mcp_server_integrated/plugins\n"
+              << "  " << program << " ./build/mcp_server/mcp_server\n"
+              << "  " << program << " ./build/mcp_server/mcp_server 50071 ./build/mcp_server/plugins\n"
               << std::endl;
 }
 

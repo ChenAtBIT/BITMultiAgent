@@ -2,8 +2,8 @@
 cmake_minimum_required(VERSION 3.15)
 
 # ============================================================================
-# 注意: rpc_server 和 rpc_client 主程序在 server/ 和 client/ 目录中
-# 编译后位于: build/server/rpc_server 和 build/client/rpc_client
+# 注意: rpc_server 和 rpc_client 主程序在 RPC_server/ 和 RPC_client/ 目录中
+# 编译后位于: build/RPC_server/rpc_server 和 build/RPC_client/rpc_client
 # ============================================================================
 
 # 序列化示例 (暂时禁用，需要完整的服务实现)
@@ -60,7 +60,7 @@ target_link_libraries(rag_mcp_example
     pthread
 )
 target_include_directories(rag_mcp_example PRIVATE
-    ${CMAKE_SOURCE_DIR}/mcp/include
+    ${CMAKE_SOURCE_DIR}/mcp_client/include
     ${CMAKE_SOURCE_DIR}/common/include
 )
 

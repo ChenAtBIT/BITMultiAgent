@@ -34,10 +34,10 @@ REDIS_HOST="127.0.0.1" # Redis 默认地址
 REDIS_PORT=6379 # Redis 默认端口
 
 # MCP Server 配置
-MCP_BUILD_DIR="$BUILD_DIR/mcp_server_integrated"
+MCP_BUILD_DIR="$BUILD_DIR/mcp_server"
 MCP_SERVER_PATH="$MCP_BUILD_DIR/mcp_server"
 MCP_PLUGINS_PATH="$MCP_BUILD_DIR/plugins"
-MCP_LOGS_PATH="$BUILD_DIR/runtime/mcp_server_integrated/logs"
+MCP_LOGS_PATH="$BUILD_DIR/runtime/mcp_server/logs"
 ENABLE_MCP="${ENABLE_MCP:-false}"
 
 # RAG-MCP 配置 (智能工具选择)

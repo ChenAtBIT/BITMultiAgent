@@ -10,8 +10,8 @@ add_executable(grpc_server
 )
 
 target_include_directories(grpc_server PRIVATE
-    ${CMAKE_SOURCE_DIR}/server/include
-    ${CMAKE_SOURCE_DIR}/client/include
+    ${CMAKE_SOURCE_DIR}/RPC_server/include
+    ${CMAKE_SOURCE_DIR}/RPC_client/include
     ${CMAKE_SOURCE_DIR}/common/include
     ${CMAKE_SOURCE_DIR}/proto
     ${CMAKE_BINARY_DIR}/proto
@@ -33,7 +33,7 @@ add_executable(grpc_client
 )
 
 target_include_directories(grpc_client PRIVATE
-    ${CMAKE_SOURCE_DIR}/client/include
+    ${CMAKE_SOURCE_DIR}/RPC_client/include
     ${CMAKE_SOURCE_DIR}/common/include
     ${CMAKE_SOURCE_DIR}/proto
     ${CMAKE_BINARY_DIR}/proto

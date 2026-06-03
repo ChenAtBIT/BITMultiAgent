@@ -19,7 +19,7 @@ target_include_directories(ai_orchestrator PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../a2a/third_party
     ${CMAKE_CURRENT_SOURCE_DIR}/../../a2a_adapter/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../orchestrator/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../mcp/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../mcp_client/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../common/include
     ${CMAKE_BINARY_DIR}/proto
     ${HIREDIS_INCLUDE_DIRS}
@@ -48,7 +48,7 @@ target_include_directories(ai_math_agent PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../a2a/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../a2a/include/a2a/examples
     ${CMAKE_CURRENT_SOURCE_DIR}/../../a2a/third_party
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../mcp/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../mcp_client/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../common/include
     ${CMAKE_BINARY_DIR}/proto
     ${HIREDIS_INCLUDE_DIRS}

@@ -5,7 +5,7 @@ add_executable(mcp_tutorial_direct
 )
 
 target_include_directories(mcp_tutorial_direct PRIVATE
-    ${CMAKE_SOURCE_DIR}/mcp/include
+    ${CMAKE_SOURCE_DIR}/mcp_client/include
     ${CMAKE_SOURCE_DIR}/common/include
 )
 
@@ -21,7 +21,7 @@ add_executable(grpc_mcp_tutorial_server
 )
 
 target_include_directories(grpc_mcp_tutorial_server PRIVATE
-    ${CMAKE_SOURCE_DIR}/mcp/include
+    ${CMAKE_SOURCE_DIR}/mcp_client/include
     ${CMAKE_SOURCE_DIR}/common/include
     ${CMAKE_SOURCE_DIR}/proto
     ${CMAKE_BINARY_DIR}/proto

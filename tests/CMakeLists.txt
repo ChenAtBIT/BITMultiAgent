@@ -196,8 +196,8 @@ target_link_libraries(test_ai_query_integration
 )
 
 target_include_directories(test_ai_query_integration PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../server/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../client/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../RPC_server/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../RPC_client/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../a2a_adapter/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../a2a/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../a2a/third_party
@@ -222,7 +222,7 @@ target_link_libraries(test_mcp_integration
 )
 
 target_include_directories(test_mcp_integration PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../mcp/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../mcp_client/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../common/include
 )
 
@@ -244,7 +244,7 @@ target_link_libraries(test_rag_mcp_properties
 )
 
 target_include_directories(test_rag_mcp_properties PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../mcp/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../mcp_client/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../common/include
 )
 
@@ -277,8 +277,8 @@ target_link_libraries(test_agent_communication
     CURL::libcurl
 )
 target_include_directories(test_agent_communication PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../server/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../client/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../RPC_server/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../RPC_client/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../registry/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../common/include
     ${CMAKE_CURRENT_BINARY_DIR}/../proto

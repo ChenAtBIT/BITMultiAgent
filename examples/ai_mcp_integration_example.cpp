@@ -42,10 +42,10 @@ int main() {
     printSeparator("初始化AI服务");
     
     // 初始化AI服务
-    if (!ai_proxy.initialize("/root/agent-communication/build/mcp_server_integrated/mcp_server", 
+    if (!ai_proxy.initialize("/root/agent-communication/build/mcp_server/mcp_server", 
                             {"-n", "ai-integration-server", 
                              "-l", "/tmp/mcp_logs", 
-                             "-p", "/root/agent-communication/build/mcp_server_integrated/plugins"})) {
+                             "-p", "/root/agent-communication/build/mcp_server/plugins"})) {
         std::cerr << "❌ 初始化AI服务失败!" << std::endl;
         return 1;
     }
@@ -185,4 +185,3 @@ int main() {
     std::cout << "\n=== 集成测试完成 ===" << std::endl;
     return 0;
 }
-

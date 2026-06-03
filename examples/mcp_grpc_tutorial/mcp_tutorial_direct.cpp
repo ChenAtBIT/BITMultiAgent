@@ -137,7 +137,7 @@ bool runDemo(MCPClient& client, const std::vector<MCPTool>& tools) {
     }
 
     if (!ran_any) {
-        std::cout << "没有找到教学演示需要的工具，请先构建 mcp_server_integrated。" << std::endl;
+        std::cout << "没有找到教学演示需要的工具，请先构建 mcp_server。" << std::endl;
     }
 
     return ran_any;

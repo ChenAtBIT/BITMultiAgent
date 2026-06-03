@@ -54,7 +54,7 @@ Agent Communication RPC Framework 是一个专为多 Agent 协作场景设计的
 │                              用户应用层                                      │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                         RPC Client                                   │   │
-│  │                    (build/client/rpc_client)                         │   │
+│  │                  (build/RPC_client/rpc_client)                       │   │
 │  └──────────────────────────────┬──────────────────────────────────────┘   │
 └─────────────────────────────────┼───────────────────────────────────────────┘
                                   │ gRPC/Protobuf
@@ -63,7 +63,7 @@ Agent Communication RPC Framework 是一个专为多 Agent 协作场景设计的
 │                              RPC 服务层                                      │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                         RPC Server                                   │   │
-│  │                    (build/server/rpc_server)                         │   │
+│  │                  (build/RPC_server/rpc_server)                       │   │
 │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                  │   │
 │  │  │AIQueryService│  │ A2A Adapter │  │HealthService│                  │   │
 │  │  └──────┬──────┘  └──────┬──────┘  └─────────────┘                  │   │
@@ -162,7 +162,7 @@ sudo apt-get install -y \
 
 > **目录重分布约定**:
 > - 所有构建产物统一输出到主项目 `build/`
-> - `mcp_server_integrated` 的二进制与插件产物统一输出到 `build/mcp_server_integrated/`
+> - `mcp_server` 的二进制与插件产物统一输出到 `build/mcp_server/`
 > - 日志、PID 等运行时文件统一输出到 `build/runtime/`
 
 ### 1. 编译主项目
@@ -172,30 +172,25 @@ sudo apt-get install -y \
 git clone <repository-url>
 cd agent-communication
 
-# 配置并编译
+# 配置并全量编译
 cmake -S . -B build
 cmake --build build -j$(nproc)
+
+# 单独编译
+cmake --build build --target ai_orchestrator -j$(nproc) 
 ```
 
-### 2. 编译 MCP Server (可选，用于工具调用)
+### 2. 验证编译结果
 
 ```bash
-cmake -S . -B build
-cmake --build build --target mcp_server -j$(nproc)
-```
-
-### 3. 验证编译结果
-
-```bash
-# 检查主要可执行文件
-ls -la build/server/rpc_server
-ls -la build/client/rpc_client
+# 检查主要可执行文件/库
+ls -la build/RPC_server/rpc_server
+ls -la build/RPC_client/rpc_client
+ls -la build/mcp_client/libagent_rpc_mcp.a
 ls -la build/examples/ai_orchestrator/ai_orchestrator
 ls -la build/examples/ai_orchestrator/ai_math_agent
 ls -la build/examples/ai_orchestrator/ai_registry_server
-
-# 检查 MCP Server (如果编译了)
-ls -la build/mcp_server_integrated/mcp_server
+ls -la build/mcp_server/mcp_server
 ```
 
 ---
@@ -215,7 +210,7 @@ ls -la build/mcp_server_integrated/mcp_server
 ### 第一步：编译所有组件
 
 ```bash
-# 一次配置主工程，MCP Server 会统一输出到 build/mcp_server_integrated
+# 一次配置主工程，MCP Server 会统一输出到 build/mcp_server
 cmake -S . -B build
 cmake --build build -j$(nproc)
 ```
@@ -277,7 +272,7 @@ Orchestrator 启动完成 (端口: 5000)
 
 ```bash
 # 新开终端，启动 gRPC 服务端
-./build/server/rpc_server
+./build/RPC_server/rpc_server
 ```
 
 预期输出：
@@ -296,7 +291,7 @@ AI 服务状态:    可用
 
 ```bash
 # 新开终端，启动客户端
-./build/client/rpc_client
+./build/RPC_client/rpc_client
 ```
 
 在客户端中测试各种功能：
@@ -401,7 +396,7 @@ grep -E "MCP|RAG" build/runtime/examples/ai_orchestrator/logs/orchestrator.log
 ```bash
 # 运行 RAG-MCP 示例程序，验证智能工具选择
 ./build/examples/rag_mcp_example \
-    --mcp-server ./build/mcp_server_integrated/mcp_server \
+    --mcp-server ./build/mcp_server/mcp_server \
     --enable-rag \
     --top-k 5 \
     --threshold 0.3
@@ -451,7 +446,7 @@ sudo systemctl start redis-server
 redis-cli ping  # 应返回 PONG
 
 # 确保 MCP Server 已编译
-ls build/mcp_server_integrated/mcp_server
+ls build/mcp_server/mcp_server
 ```
 
 ### 步骤 2: 启动 Registry Server
@@ -479,7 +474,7 @@ ls build/mcp_server_integrated/mcp_server
     --redis-host 127.0.0.1 \
     --redis-port 6379 \
     --enable-mcp \
-    --mcp-server $(pwd)/build/mcp_server_integrated/mcp_server \
+    --mcp-server $(pwd)/build/mcp_server/mcp_server \
     --enable-rag \
     --rag-top-k 5 \
     --rag-threshold 0.3
@@ -510,7 +505,7 @@ ls build/mcp_server_integrated/mcp_server
     --redis-host 127.0.0.1 \
     --redis-port 6379 \
     --enable-mcp \
-    --mcp-server $(pwd)/build/mcp_server_integrated/mcp_server \
+    --mcp-server $(pwd)/build/mcp_server/mcp_server \
     --enable-rag \
     --rag-top-k 5 \
     --rag-threshold 0.3
@@ -532,7 +527,7 @@ ls build/mcp_server_integrated/mcp_server
 
 ```bash
 # 终端 4: RPC Server (gRPC 服务端)
-./build/server/rpc_server
+./build/RPC_server/rpc_server
 
 # 输出:
 # [INFO ] 正在初始化 RPC Server...
@@ -554,8 +549,8 @@ ls build/mcp_server_integrated/mcp_server
 
 ```bash
 # 终端 5: RPC Client (用户客户端)
-# Agent_communication/client/src/main.cpp
-./build/client/rpc_client
+# Agent_communication/RPC_client/src/main.cpp
+./build/RPC_client/rpc_client
 
 # 输出:
 # ==========================================
@@ -627,7 +622,7 @@ AI: 人工智能是...（逐字输出）
 ```bash
 # 单独运行 RAG-MCP 智能工具选择示例
 ./build/examples/rag_mcp_example \
-    --mcp-server ./build/mcp_server_integrated/mcp_server \
+    --mcp-server ./build/mcp_server/mcp_server \
     --enable-rag \
     --top-k 5 \
     --threshold 0.3
@@ -697,13 +692,13 @@ gRPC 服务端和客户端，提供 AI 查询接口。
 
 ```bash
 # RPC Server 参数
-./build/server/rpc_server [选项]
+./build/RPC_server/rpc_server [选项]
   -p, --port PORT           监听端口 (默认: 50051)
   -o, --orchestrator URL    Orchestrator 地址 (默认: http://localhost:5000)
   -h, --help                显示帮助
 
 # RPC Client 参数
-./build/client/rpc_client [选项] [SERVER_ADDRESS]
+./build/RPC_client/rpc_client [选项] [SERVER_ADDRESS]
   -s, --stream              启用流式模式
   -c, --context ID          设置上下文 ID
   -t, --timeout SEC         超时时间 (默认: 60)
@@ -859,7 +854,7 @@ export DASHSCOPE_API_KEY=sk-your-dashscope-api-key
 
 # 运行 RAG 示例
 ./build/examples/rag_mcp_example \
-    --mcp-server ./build/mcp_server_integrated/mcp_server \
+    --mcp-server ./build/mcp_server/mcp_server \
     --enable-rag \
     --top-k 5 \
     --threshold 0.3
@@ -1056,7 +1051,7 @@ grep "RAG" build/runtime/examples/ai_orchestrator/logs/orchestrator.log
 
 # 5. 运行 RAG 示例验证
 ./build/examples/rag_mcp_example \
-    --mcp-server ./build/mcp_server_integrated/mcp_server \
+    --mcp-server ./build/mcp_server/mcp_server \
     --enable-rag
 
 # 6. 检查输出中是否显示 "RAG Active: Yes"
@@ -1096,32 +1091,54 @@ tail -f build/runtime/examples/ai_orchestrator/logs/math_agent.log
 
 ## 项目结构
 
-```
+```text
 agent-communication/
-├── build/                       # 统一构建与运行时输出
-│   ├── mcp_server_integrated/   # MCP Server 二进制与插件产物
-│   └── runtime/                 # 日志、PID 等运行时文件
-├── common/                      # 公共组件 (日志、类型、指标)
-├── server/                      # RPC 服务端
-├── client/                      # RPC 客户端
-├── a2a/                         # A2A 协议实现
-├── a2a_adapter/                 # A2A 适配层
-├── orchestrator/                # Agent 编排
-├── mcp/                         # MCP 模块 + RAG-MCP
-├── mcp_server_integrated/       # MCP Server 及插件
-├── proto/                       # Protobuf 定义
-├── examples/                    # 示例代码
-│   └── ai_orchestrator/         # 多 Agent 系统示例
-├── tests/                       # 测试代码
-├── docs/                        # 详细文档
-│   ├── architecture.md          # 架构设计
-│   ├── a2a-protocol.md          # A2A 协议
-│   ├── rag-mcp-guide.md         # RAG-MCP 指南
-│   ├── mcp-plugin-development.md # MCP 插件开发
-│   ├── project-layout.md        # 目录重分布规划
-│   └── deployment.md            # 部署指南
-└── README.md                    # 本文档
+├── build/
+│   ├── mcp_client/                     # MCP 客户端库与 RAG-MCP 构建产物
+│   ├── examples/                       # 示例程序二进制
+│   ├── mcp_server/                     # MCP Server 与插件构建产物
+│   ├── RPC_server/                     # rpc_server 等主程序产物
+│   ├── RPC_client/                     # rpc_client 等客户端产物
+│   └── runtime/
+│       ├── examples/ai_orchestrator/   # 启动脚本生成的日志与 PID
+│       └── mcp_server/                 # MCP Server 运行日志
+├── common/                             # 公共基础能力
+├── proto/                              # 协议定义
+├── a2a/                                # A2A 协议实现
+├── a2a_adapter/                        # RPC <-> A2A 适配层
+├── mcp_client/                         # MCP 客户端与 RAG-MCP 能力
+├── orchestrator/                       # Agent 编排层
+├── registry/                           # 服务注册发现
+├── RPC_server/                         # RPC 服务层
+├── RPC_client/                         # RPC 客户端入口
+├── mcp_server/                         # MCP Server 源码与插件源码
+├── examples/                           # 示例源码
+├── tests/                              # 测试源码
+└── docs/                               # 文档
 ```
+
+### 对应架构层的目录职责
+
+- 应用入口层：`RPC_client/`、`RPC_server/`、`examples/`
+- 协议与适配层：`proto/`、`a2a/`、`a2a_adapter/`
+- 编排与工具层：`orchestrator/`、`mcp_client/`、`mcp_server/`
+- 基础设施层：`common/`、`registry/`
+- 支撑资产：`tests/`、`docs/`
+
+### 目录治理规则
+
+- PID、日志、临时输出统一归档到 `build/runtime/`。
+
+## 后续可选演进
+
+如果后面要继续做更强的源码级重构，可以再考虑第二阶段：
+
+- 将 `RPC_server/`、`RPC_client/`、`examples/` 进一步归并为 `apps/`
+- 将 `common/`、`a2a/`、`a2a_adapter/`、`mcp_client/`、`orchestrator/` 归并为 `modules/`
+- 将 `mcp_server/` 单独提升为 `tools/mcp_server/`
+
+这一步会牵涉较多 include 路径、CMake 和文档引用，建议在功能稳定后再做。
+
 
 ---
 
