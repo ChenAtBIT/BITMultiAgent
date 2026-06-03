@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 project(AgentCommunicationRPC VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
+option(AGENT_RPC_BUILD_MCP_SERVER "Build integrated MCP server inside the top-level build tree" ON)
 
 # 启用测试
 enable_testing()
@@ -73,6 +74,10 @@ add_subdirectory(a2a_adapter)
 add_subdirectory(orchestrator)
 # MCP模块 - 用于 AI Agent 工具集成
 add_subdirectory(mcp)
+if(AGENT_RPC_BUILD_MCP_SERVER)
+    # 将 MCP Server 的二进制产物统一输出到 build/mcp_server_integrated 目录。
+    add_subdirectory(mcp_server_integrated ${CMAKE_BINARY_DIR}/mcp_server_integrated)
+endif()
 # add_subdirectory(ai_interface)
 add_subdirectory(server)
 add_subdirectory(client)

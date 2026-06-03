@@ -160,6 +160,11 @@ sudo apt-get install -y \
 
 ## 编译构建
 
+> **目录重分布约定**:
+> - 所有构建产物统一输出到主项目 `build/`
+> - `mcp_server_integrated` 的二进制与插件产物统一输出到 `build/mcp_server_integrated/`
+> - 日志、PID 等运行时文件统一输出到 `build/runtime/`
+
 ### 1. 编译主项目
 
 ```bash
@@ -167,25 +172,16 @@ sudo apt-get install -y \
 git clone <repository-url>
 cd agent-communication
 
-# 创建构建目录
-mkdir -p build && cd build
-
 # 配置并编译
-cmake ..
-make -j$(nproc)
-
-# 返回项目根目录
-cd ..
+cmake -S . -B build
+cmake --build build -j$(nproc)
 ```
 
 ### 2. 编译 MCP Server (可选，用于工具调用)
 
 ```bash
-cd mcp_server_integrated
-mkdir -p build && cd build
-cmake ..
-make -j$(nproc)
-cd ../..
+cmake -S . -B build
+cmake --build build --target mcp_server -j$(nproc)
 ```
 
 ### 3. 验证编译结果
@@ -199,7 +195,7 @@ ls -la build/examples/ai_orchestrator/ai_math_agent
 ls -la build/examples/ai_orchestrator/ai_registry_server
 
 # 检查 MCP Server (如果编译了)
-ls -la mcp_server_integrated/build/mcp_server
+ls -la build/mcp_server_integrated/mcp_server
 ```
 
 ---
@@ -219,16 +215,9 @@ ls -la mcp_server_integrated/build/mcp_server
 ### 第一步：编译所有组件
 
 ```bash
-# 1. 编译主项目
-mkdir -p build && cd build
-cmake .. && make -j$(nproc)
-cd ..
-
-# 2. 编译 MCP Server（提供工具调用能力）
-cd mcp_server_integrated
-mkdir -p build && cd build
-cmake .. && make -j$(nproc)
-cd ../..
+# 一次配置主工程，MCP Server 会统一输出到 build/mcp_server_integrated
+cmake -S . -B build
+cmake --build build -j$(nproc)
 ```
 
 ### 第二步：设置环境变量
@@ -360,7 +349,7 @@ pkill -f ai_registry_server
 
 ```bash
 # 查看 Math Agent 日志
-grep -E "MCP|RAG" examples/ai_orchestrator/logs/math_agent.log
+grep -E "MCP|RAG" build/runtime/examples/ai_orchestrator/logs/math_agent.log
 
 # 预期输出:
 # [MathAgent] MCP 已启用，可用工具: calculator add subtract multiply divide power sqrt factorial
@@ -368,7 +357,7 @@ grep -E "MCP|RAG" examples/ai_orchestrator/logs/math_agent.log
 # [INFO ] Indexing 12 tools for RAG retrieval
 
 # 查看 Orchestrator 日志
-grep -E "MCP|RAG" examples/ai_orchestrator/logs/orchestrator.log
+grep -E "MCP|RAG" build/runtime/examples/ai_orchestrator/logs/orchestrator.log
 
 # 预期输出:
 # [Orchestrator] MCP 已启用，可用工具: calculator add subtract multiply divide power sqrt factorial
@@ -412,7 +401,7 @@ grep -E "MCP|RAG" examples/ai_orchestrator/logs/orchestrator.log
 ```bash
 # 运行 RAG-MCP 示例程序，验证智能工具选择
 ./build/examples/rag_mcp_example \
-    --mcp-server ./mcp_server_integrated/build/mcp_server \
+    --mcp-server ./build/mcp_server_integrated/mcp_server \
     --enable-rag \
     --top-k 5 \
     --threshold 0.3
@@ -462,7 +451,7 @@ sudo systemctl start redis-server
 redis-cli ping  # 应返回 PONG
 
 # 确保 MCP Server 已编译
-ls mcp_server_integrated/build/mcp_server
+ls build/mcp_server_integrated/mcp_server
 ```
 
 ### 步骤 2: 启动 Registry Server
@@ -490,7 +479,7 @@ ls mcp_server_integrated/build/mcp_server
     --redis-host 127.0.0.1 \
     --redis-port 6379 \
     --enable-mcp \
-    --mcp-server $(pwd)/mcp_server_integrated/build/mcp_server \
+    --mcp-server $(pwd)/build/mcp_server_integrated/mcp_server \
     --enable-rag \
     --rag-top-k 5 \
     --rag-threshold 0.3
@@ -521,7 +510,7 @@ ls mcp_server_integrated/build/mcp_server
     --redis-host 127.0.0.1 \
     --redis-port 6379 \
     --enable-mcp \
-    --mcp-server $(pwd)/mcp_server_integrated/build/mcp_server \
+    --mcp-server $(pwd)/build/mcp_server_integrated/mcp_server \
     --enable-rag \
     --rag-top-k 5 \
     --rag-threshold 0.3
@@ -638,7 +627,7 @@ AI: 人工智能是...（逐字输出）
 ```bash
 # 单独运行 RAG-MCP 智能工具选择示例
 ./build/examples/rag_mcp_example \
-    --mcp-server ./mcp_server_integrated/build/mcp_server \
+    --mcp-server ./build/mcp_server_integrated/mcp_server \
     --enable-rag \
     --top-k 5 \
     --threshold 0.3
@@ -870,7 +859,7 @@ export DASHSCOPE_API_KEY=sk-your-dashscope-api-key
 
 # 运行 RAG 示例
 ./build/examples/rag_mcp_example \
-    --mcp-server ./mcp_server_integrated/build/mcp_server \
+    --mcp-server ./build/mcp_server_integrated/mcp_server \
     --enable-rag \
     --top-k 5 \
     --threshold 0.3
@@ -1005,7 +994,7 @@ cd build && cmake .. && make -j$(nproc)
 curl http://localhost:5000/.well-known/agent-card.json
 
 # 查看日志
-tail -f examples/ai_orchestrator/logs/orchestrator.log
+tail -f build/runtime/examples/ai_orchestrator/logs/orchestrator.log
 ```
 
 ### Q: Redis 连接失败
@@ -1032,13 +1021,14 @@ export QWEN_API_KEY=sk-your-actual-api-key
 
 ```bash
 # 1. 确保编译了 MCP Server
-cd mcp_server_integrated/build && cmake .. && make -j$(nproc)
+cmake -S . -B build
+cmake --build build --target mcp_server -j$(nproc)
 
 # 2. 使用 ENABLE_MCP=true 启动
 ENABLE_MCP=true ./examples/ai_orchestrator/start_system.sh
 
 # 3. 检查日志确认 MCP 初始化
-grep "MCP 已启用" examples/ai_orchestrator/logs/orchestrator.log
+grep "MCP 已启用" build/runtime/examples/ai_orchestrator/logs/orchestrator.log
 ```
 
 ### Q: Ctrl+C 无法退出 Client
@@ -1058,7 +1048,7 @@ export DASHSCOPE_API_KEY=sk-your-dashscope-api-key
 ENABLE_MCP=true ENABLE_RAG=true ./examples/ai_orchestrator/start_system.sh
 
 # 4. 检查日志确认 RAG 初始化
-grep "RAG" examples/ai_orchestrator/logs/orchestrator.log
+grep "RAG" build/runtime/examples/ai_orchestrator/logs/orchestrator.log
 
 # 预期输出:
 # [INFO ] RAG-MCP initialized successfully
@@ -1066,7 +1056,7 @@ grep "RAG" examples/ai_orchestrator/logs/orchestrator.log
 
 # 5. 运行 RAG 示例验证
 ./build/examples/rag_mcp_example \
-    --mcp-server ./mcp_server_integrated/build/mcp_server \
+    --mcp-server ./build/mcp_server_integrated/mcp_server \
     --enable-rag
 
 # 6. 检查输出中是否显示 "RAG Active: Yes"
@@ -1096,10 +1086,10 @@ ENABLE_MCP=true ENABLE_RAG=true ./examples/ai_orchestrator/start_system.sh
 
 ```bash
 # 查看 Orchestrator 日志
-tail -f examples/ai_orchestrator/logs/orchestrator.log
+tail -f build/runtime/examples/ai_orchestrator/logs/orchestrator.log
 
 # 查看 Math Agent 日志
-tail -f examples/ai_orchestrator/logs/math_agent.log
+tail -f build/runtime/examples/ai_orchestrator/logs/math_agent.log
 ```
 
 ---
@@ -1108,6 +1098,9 @@ tail -f examples/ai_orchestrator/logs/math_agent.log
 
 ```
 agent-communication/
+├── build/                       # 统一构建与运行时输出
+│   ├── mcp_server_integrated/   # MCP Server 二进制与插件产物
+│   └── runtime/                 # 日志、PID 等运行时文件
 ├── common/                      # 公共组件 (日志、类型、指标)
 ├── server/                      # RPC 服务端
 ├── client/                      # RPC 客户端
@@ -1125,6 +1118,7 @@ agent-communication/
 │   ├── a2a-protocol.md          # A2A 协议
 │   ├── rag-mcp-guide.md         # RAG-MCP 指南
 │   ├── mcp-plugin-development.md # MCP 插件开发
+│   ├── project-layout.md        # 目录重分布规划
 │   └── deployment.md            # 部署指南
 └── README.md                    # 本文档
 ```

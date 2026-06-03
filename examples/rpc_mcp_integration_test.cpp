@@ -38,11 +38,11 @@ int main() {
     config.log_level = "INFO";
     
     // 设置MCP服务器路径和参数
-    rpc_server.setMCPServerPath("/root/agent-communication/mcp_server_integrated/build/mcp_server");
+    rpc_server.setMCPServerPath("/root/agent-communication/build/mcp_server_integrated/mcp_server");
     rpc_server.setMCPServerArgs({
         "-n", "rpc-integrated-server",
         "-l", "/tmp/mcp_logs",
-        "-p", "/root/agent-communication/mcp_server_integrated/plugins"
+        "-p", "/root/agent-communication/build/mcp_server_integrated/plugins"
     });
     
     // 初始化RPC服务器
@@ -164,5 +164,4 @@ int main() {
     std::cout << "\n=== 集成测试完成 ===" << std::endl;
     return 0;
 }
-
 

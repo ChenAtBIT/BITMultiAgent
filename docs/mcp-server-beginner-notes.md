@@ -206,10 +206,9 @@ cmake --build build -j$(nproc)
 ### 4.2 编译 MCP Server 和插件
 
 ```bash
-cmake -S mcp_server_integrated -B mcp_server_integrated/build
-cmake --build mcp_server_integrated/build -j$(nproc)
-OR
-cmake --build build --target mcp_tutorial_direct -j"$(nproc)"
+cmake -S . -B build
+cmake --build build --target mcp_server -j$(nproc)
+cmake --build build --target mcp_tutorial_direct -j$(nproc)
 ```
 
 编译完成后，重点看这些文件是否存在：
@@ -218,8 +217,8 @@ cmake --build build --target mcp_tutorial_direct -j"$(nproc)"
 ./build/examples/mcp_grpc_tutorial/mcp_tutorial_direct
 ./build/examples/mcp_grpc_tutorial/grpc_mcp_tutorial_server
 ./build/examples/mcp_grpc_tutorial/grpc_mcp_tutorial_client
-./mcp_server_integrated/build/mcp_server
-./mcp_server_integrated/build/plugins/tutorial_echo/libtutorial_echo.so
+./build/mcp_server_integrated/mcp_server
+./build/mcp_server_integrated/plugins/tutorial_echo/libtutorial_echo.so
 ```
 
 ---
@@ -230,8 +229,8 @@ cmake --build build --target mcp_tutorial_direct -j"$(nproc)"
 
 ```bash
 ./build/examples/mcp_grpc_tutorial/mcp_tutorial_direct \
-  ./mcp_server_integrated/build/mcp_server \
-  ./mcp_server_integrated/build/plugins
+  ./build/mcp_server_integrated/mcp_server \
+  ./build/mcp_server_integrated/plugins
 ```
 
 ### 5.2 你应该按这个顺序试
@@ -300,9 +299,9 @@ call repeat_text {"text":"go","count":3}
 
 ```bash
 ./build/examples/mcp_grpc_tutorial/grpc_mcp_tutorial_server \
-  ./mcp_server_integrated/build/mcp_server \
+  ./build/mcp_server_integrated/mcp_server \
   50071 \
-  ./mcp_server_integrated/build/plugins
+  ./build/mcp_server_integrated/plugins
 ```
 
 ### 6.2 再启动教程客户端
@@ -549,8 +548,8 @@ if (!entry.instance->Initialize()) {
 ### 第一步：重新编译 `mcp_server_integrated`
 
 ```bash
-cmake -S mcp_server_integrated -B mcp_server_integrated/build
-cmake --build mcp_server_integrated/build -j$(nproc)
+cmake -S . -B build
+cmake --build build --target mcp_server -j$(nproc)
 ```
 
 ### 第二步：先用直连 MCP 的示例确认它已经出现在工具列表

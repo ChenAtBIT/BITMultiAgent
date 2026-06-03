@@ -120,10 +120,8 @@ ctest --output-on-failure
 ### 编译 MCP Server
 
 ```bash
-cd mcp_server_integrated
-mkdir build && cd build
-cmake -DCMAKE_BUILD_TYPE=Release ..
-make -j$(nproc)
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target mcp_server -j$(nproc)
 ```
 
 ## 配置

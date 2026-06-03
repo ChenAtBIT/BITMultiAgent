@@ -154,7 +154,7 @@ ai_orchestrator  也会连接 redis-server
 因为 [`mcp/src/mcp_client.cpp`](../mcp/src/mcp_client.cpp) 里的 `buildEffectiveServerArgs()` 会在没有显式 `-p/--plugins` 时，自动推断：
 
 - `mcp_server` 所在目录的同级 `plugins/`
-- 对于 `mcp_server_integrated/build/mcp_server`，推断出的目录就是 `mcp_server_integrated/build/plugins`
+- 对于 `build/mcp_server_integrated/mcp_server`，推断出的目录就是 `build/mcp_server_integrated/plugins`
 
 所以 `Math Agent` 在手动部署命令里只传 `--mcp-server` 也能拉起并发现工具。
 

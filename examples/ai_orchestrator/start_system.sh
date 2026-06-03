@@ -9,13 +9,20 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # 项目根目录
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# 主构建目录
+BUILD_DIR="$PROJECT_ROOT/build"
 # 可执行文件目录
-BIN_DIR="$PROJECT_ROOT/build/examples/ai_orchestrator"
+BIN_DIR="$BUILD_DIR/examples/ai_orchestrator"
+# 运行时产物目录
+RUNTIME_DIR="$BUILD_DIR/runtime/examples/ai_orchestrator"
+LOG_DIR="$RUNTIME_DIR/logs"
+PID_DIR="$RUNTIME_DIR/pids"
 
 # 检查可执行文件是否存在
 if [ ! -f "$BIN_DIR/ai_registry_server" ]; then
     echo "错误: 找不到可执行文件，请先编译项目"
-    echo "  cd $PROJECT_ROOT && mkdir -p build && cd build && cmake .. && make -j"
+    echo "  cmake -S $PROJECT_ROOT -B $BUILD_DIR"
+    echo "  cmake --build $BUILD_DIR -j\$(nproc)"
     exit 1
 fi
 
@@ -27,9 +34,10 @@ REDIS_HOST="127.0.0.1" # Redis 默认地址
 REDIS_PORT=6379 # Redis 默认端口
 
 # MCP Server 配置
-MCP_SERVER_PATH="$PROJECT_ROOT/mcp_server_integrated/build/mcp_server"
-MCP_PLUGINS_PATH="$PROJECT_ROOT/mcp_server_integrated/build/plugins"
-MCP_LOGS_PATH="$PROJECT_ROOT/mcp_server_integrated/build/logs"
+MCP_BUILD_DIR="$BUILD_DIR/mcp_server_integrated"
+MCP_SERVER_PATH="$MCP_BUILD_DIR/mcp_server"
+MCP_PLUGINS_PATH="$MCP_BUILD_DIR/plugins"
+MCP_LOGS_PATH="$BUILD_DIR/runtime/mcp_server_integrated/logs"
 ENABLE_MCP="${ENABLE_MCP:-false}"
 
 # RAG-MCP 配置 (智能工具选择)
@@ -49,7 +57,7 @@ if [ "$API_KEY" == "sk-your-api-key" ]; then
 fi
 
 # 创建日志和 PID 目录
-mkdir -p "$SCRIPT_DIR/logs" "$SCRIPT_DIR/pids"
+mkdir -p "$LOG_DIR" "$PID_DIR"
 
 cleanup_failed_start() {
     echo ""
@@ -85,10 +93,10 @@ echo "=========================================="
 
 # 1. 启动 Registry Server
 echo "[1/3] 启动 Registry Server..."
-"$BIN_DIR/ai_registry_server" $REGISTRY_PORT > "$SCRIPT_DIR/logs/registry.log" 2>&1 &
+"$BIN_DIR/ai_registry_server" $REGISTRY_PORT > "$LOG_DIR/registry.log" 2>&1 &
 registry_pid=$!
-echo $registry_pid > "$SCRIPT_DIR/pids/registry.pid"
-wait_for_service "Registry Server" "$registry_pid" "$REGISTRY_PORT" "$SCRIPT_DIR/logs/registry.log"
+echo $registry_pid > "$PID_DIR/registry.pid"
+wait_for_service "Registry Server" "$registry_pid" "$REGISTRY_PORT" "$LOG_DIR/registry.log"
 
 # MCP 参数
 MCP_ARGS=""
@@ -114,17 +122,17 @@ fi
 
 # 2. 启动 Math Agent
 echo "[2/3] 启动 Math Agent..."
-"$BIN_DIR/ai_math_agent" math-1 $MATH_AGENT_PORT http://localhost:$REGISTRY_PORT $API_KEY --redis-host $REDIS_HOST --redis-port $REDIS_PORT $MCP_ARGS $RAG_ARGS > "$SCRIPT_DIR/logs/math_agent.log" 2>&1 &
+"$BIN_DIR/ai_math_agent" math-1 $MATH_AGENT_PORT http://localhost:$REGISTRY_PORT $API_KEY --redis-host $REDIS_HOST --redis-port $REDIS_PORT $MCP_ARGS $RAG_ARGS > "$LOG_DIR/math_agent.log" 2>&1 &
 math_agent_pid=$!
-echo $math_agent_pid > "$SCRIPT_DIR/pids/math_agent.pid"
-wait_for_service "Math Agent" "$math_agent_pid" "$MATH_AGENT_PORT" "$SCRIPT_DIR/logs/math_agent.log"
+echo $math_agent_pid > "$PID_DIR/math_agent.pid"
+wait_for_service "Math Agent" "$math_agent_pid" "$MATH_AGENT_PORT" "$LOG_DIR/math_agent.log"
 
 # 3. 启动 Orchestrator
 echo "[3/3] 启动 Orchestrator..."
-"$BIN_DIR/ai_orchestrator" orch-1 $ORCHESTRATOR_PORT http://localhost:$REGISTRY_PORT $API_KEY --redis-host $REDIS_HOST --redis-port $REDIS_PORT $MCP_ARGS $RAG_ARGS > "$SCRIPT_DIR/logs/orchestrator.log" 2>&1 &
+"$BIN_DIR/ai_orchestrator" orch-1 $ORCHESTRATOR_PORT http://localhost:$REGISTRY_PORT $API_KEY --redis-host $REDIS_HOST --redis-port $REDIS_PORT $MCP_ARGS $RAG_ARGS > "$LOG_DIR/orchestrator.log" 2>&1 &
 orchestrator_pid=$!
-echo $orchestrator_pid > "$SCRIPT_DIR/pids/orchestrator.pid"
-wait_for_service "Orchestrator" "$orchestrator_pid" "$ORCHESTRATOR_PORT" "$SCRIPT_DIR/logs/orchestrator.log"
+echo $orchestrator_pid > "$PID_DIR/orchestrator.pid"
+wait_for_service "Orchestrator" "$orchestrator_pid" "$ORCHESTRATOR_PORT" "$LOG_DIR/orchestrator.log"
 
 echo ""
 echo "=========================================="
@@ -140,7 +148,7 @@ echo "使用客户端连接:"
 echo "  $BIN_DIR/ai_client http://localhost:$ORCHESTRATOR_PORT"
 echo ""
 echo "查看日志:"
-echo "  tail -f $SCRIPT_DIR/logs/orchestrator.log"
+echo "  tail -f $LOG_DIR/orchestrator.log"
 echo ""
 echo "停止系统:"
 echo "  $SCRIPT_DIR/stop_system.sh"
