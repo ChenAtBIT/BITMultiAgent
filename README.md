@@ -1,26 +1,61 @@
-# Agent Communication RPC Framework
+# BITMultiAgent
 
-基于 C++ 和 gRPC 的高性能 AI Agent 通信框架，支持多 Agent 协作、MCP 工具调用和 RAG 智能工具选择。
 
 ## 目录
 
-- [项目概述](#项目概述)
-- [系统架构](#系统架构)
-- [环境要求](#环境要求)
-- [编译构建](#编译构建)
-- [快速启动](#快速启动)
-- [完整部署指南](#完整部署指南)
-- [功能模块](#功能模块)
-- [配置说明](#配置说明)
-- [API 参考](#api-参考)
-- [测试](#测试)
-- [常见问题](#常见问题)
+- [项目概述](##项目概述)
+- [系统架构](##系统架构)
+- [环境要求](##环境要求)
+- [编译构建](##编译构建)
+- [快速启动](##快速启动)
+- [完整部署指南](##完整部署指南)
+- [功能模块](##功能模块)
+- [配置说明](##配置说明)
+- [API 参考](##api-参考)
+- [测试](##测试)
+- [常见问题](##常见问题)
 
 ---
 
 ## 项目概述
 
-Agent Communication RPC Framework 是一个专为多 Agent 协作场景设计的通信框架。
+针对高校课题组在内部科研资料检索、会议纪要整理、服务器运维协同等场景中存在的信息分散、人工处理效率低、经验难沉淀复用等问题，设计并实现基于C++/gRPC + A2A + MCP的Multi Agent协作系统。
+
+### 项目结构
+
+```text
+agent-communication/
+├── build/
+│   ├── mcp_client/                     # MCP 客户端库与 RAG-MCP 构建产物
+│   ├── examples/                       # 示例程序二进制
+│   ├── mcp_server/                     # MCP Server 与插件构建产物
+│   ├── RPC_server/                     # rpc_server 等主程序产物
+│   ├── RPC_client/                     # rpc_client 等客户端产物
+│   └── runtime/
+│       ├── examples/ai_orchestrator/   # 启动脚本生成的日志与 PID
+│       └── mcp_server/                 # MCP Server 运行日志
+├── common/                             # 公共基础能力
+├── proto/                              # 协议定义
+├── a2a/                                # A2A 协议实现
+├── a2a_adapter/                        # RPC <-> A2A 适配层
+├── mcp_client/                         # MCP 客户端与 RAG-MCP 能力
+├── orchestrator/                       # Agent 编排层
+├── registry/                           # 服务注册发现
+├── RPC_server/                         # RPC 服务层
+├── RPC_client/                         # RPC 客户端入口
+├── mcp_server/                         # MCP Server 源码与插件源码
+├── examples/                           # 示例源码
+├── tests/                              # 测试源码
+└── docs/                               # 文档
+```
+
+### 对应架构层的目录职责
+
+- 应用入口层：`RPC_client/`、`RPC_server/`、`examples/`
+- 协议与适配层：`proto/`、`a2a/`、`a2a_adapter/`
+- 编排与工具层：`orchestrator/`、`mcp_client/`、`mcp_server/`
+- 基础设施层：`common/`、`registry/`
+- 支撑资产：`tests/`、`docs/`
 
 ### 核心能力
 
@@ -42,6 +77,8 @@ Agent Communication RPC Framework 是一个专为多 Agent 协作场景设计的
 - **测试框架**: Google Test + RapidCheck (属性测试)
 - **向量化服务**: 阿里百炼 DashScope API
 - **AI 模型**: 通义千问 (Qwen)
+- **Agent 开发**：ReAct、上下文管理、A2A协议、Function call、MCP 协议、RAG
+- **数据存储**：Redis、SQLite
 
 ---
 
@@ -85,8 +122,8 @@ Agent Communication RPC Framework 是一个专为多 Agent 协作场景设计的
 │            ┌────────────────┼────────────────┐                             │
 │            ▼                ▼                ▼                             │
 │  ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐              │
-│  │   Math Agent    │ │   Code Agent    │ │   Other Agent   │              │
-│  │ (ai_math_agent) │ │    (可扩展)      │ │    (可扩展)      │              │
+│  │   math Agent    │ │   知识库 Agent   │ │    纪要 Agent   │              │
+│  │                 │ │    (可扩展)      │ │    (可扩展)     │              │
 │  │   端口 5001     │ │                 │ │                 │              │
 │  │  + MCP Tools    │ │  + MCP Tools    │ │  + MCP Tools    │              │
 │  └─────────────────┘ └─────────────────┘ └─────────────────┘              │
@@ -147,7 +184,7 @@ sudo apt-get install -y \
     nlohmann-json3-dev
 ```
 
-### 必需的 API Key
+### API Key
 
 | API Key | 用途 | 获取方式 |
 |---------|------|----------|
@@ -159,19 +196,9 @@ sudo apt-get install -y \
 ---
 
 ## 编译构建
-
-> **目录重分布约定**:
-> - 所有构建产物统一输出到主项目 `build/`
-> - `mcp_server` 的二进制与插件产物统一输出到 `build/mcp_server/`
-> - 日志、PID 等运行时文件统一输出到 `build/runtime/`
-
 ### 1. 编译主项目
 
 ```bash
-# 克隆项目
-git clone <repository-url>
-cd agent-communication
-
 # 配置并全量编译
 cmake -S . -B build
 cmake --build build -j$(nproc)
@@ -210,7 +237,6 @@ ls -la build/mcp_server/mcp_server
 ### 第一步：编译所有组件
 
 ```bash
-# 一次配置主工程，MCP Server 会统一输出到 build/mcp_server
 cmake -S . -B build
 cmake --build build -j$(nproc)
 ```
@@ -1089,47 +1115,8 @@ tail -f build/runtime/examples/ai_orchestrator/logs/math_agent.log
 
 ---
 
-## 项目结构
 
-```text
-agent-communication/
-├── build/
-│   ├── mcp_client/                     # MCP 客户端库与 RAG-MCP 构建产物
-│   ├── examples/                       # 示例程序二进制
-│   ├── mcp_server/                     # MCP Server 与插件构建产物
-│   ├── RPC_server/                     # rpc_server 等主程序产物
-│   ├── RPC_client/                     # rpc_client 等客户端产物
-│   └── runtime/
-│       ├── examples/ai_orchestrator/   # 启动脚本生成的日志与 PID
-│       └── mcp_server/                 # MCP Server 运行日志
-├── common/                             # 公共基础能力
-├── proto/                              # 协议定义
-├── a2a/                                # A2A 协议实现
-├── a2a_adapter/                        # RPC <-> A2A 适配层
-├── mcp_client/                         # MCP 客户端与 RAG-MCP 能力
-├── orchestrator/                       # Agent 编排层
-├── registry/                           # 服务注册发现
-├── RPC_server/                         # RPC 服务层
-├── RPC_client/                         # RPC 客户端入口
-├── mcp_server/                         # MCP Server 源码与插件源码
-├── examples/                           # 示例源码
-├── tests/                              # 测试源码
-└── docs/                               # 文档
-```
-
-### 对应架构层的目录职责
-
-- 应用入口层：`RPC_client/`、`RPC_server/`、`examples/`
-- 协议与适配层：`proto/`、`a2a/`、`a2a_adapter/`
-- 编排与工具层：`orchestrator/`、`mcp_client/`、`mcp_server/`
-- 基础设施层：`common/`、`registry/`
-- 支撑资产：`tests/`、`docs/`
-
-### 目录治理规则
-
-- PID、日志、临时输出统一归档到 `build/runtime/`。
-
-## 后续可选演进
+## 后续演进
 
 如果后面要继续做更强的源码级重构，可以再考虑第二阶段：
 
@@ -1137,7 +1124,7 @@ agent-communication/
 - 将 `common/`、`a2a/`、`a2a_adapter/`、`mcp_client/`、`orchestrator/` 归并为 `modules/`
 - 将 `mcp_server/` 单独提升为 `tools/mcp_server/`
 
-这一步会牵涉较多 include 路径、CMake 和文档引用，建议在功能稳定后再做。
+这一步会牵涉较多 include 路径、CMake 和文档引用，功能稳定后再做。
 
 
 ---
