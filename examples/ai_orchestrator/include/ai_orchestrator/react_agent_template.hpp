@@ -326,7 +326,7 @@ private:
 
             const auto params_json = request_json["params"];
             const auto message = a2a::AgentMessage::from_json(params_json["message"].dump());
-            const std::string user_text = extract_text_from_message(message);
+            const std::string user_text = extract_text_from_message(message); // [..]["params"]["message"]
             const std::string context_id = message.context_id().value_or("default");
 
             std::cout << log_prefix() << " 收到消息: " << user_text << std::endl;
@@ -645,7 +645,7 @@ protected:
      * @brief 历史消息窗口大小
      */
     virtual size_t history_message_limit() const {
-        return 8;
+        return 0;
     }
 
     /**
@@ -734,8 +734,10 @@ private:
     std::string run_react_loop(const std::string& /*user_text*/,
                                const std::string& prepared_query,
                                const std::string& context_id) {
+        // 将当前 prepared_query 通过 RAG-MCP 检索候选工具
         const ReActToolContext tool_context =
             build_tool_context(prepared_query, context_id);
+        // 上下文管理器
         std::vector<QwenMessage> messages = {
             QwenMessage{"system", build_react_system_prompt(prepared_query, context_id), "", "", {}}
         };
@@ -759,6 +761,7 @@ private:
 
         // 当历史最后一条不是当前用户消息时，再显式补一条，避免上下文不完整。
         if (messages.back().role != "user" || messages.back().content != prepared_query) {
+            std::cout << "[Error]: 当前 messages 上下文管理器里的最后一条消息不是最新消息，当前最后一条消息=" << messages.back().role << ":" << messages.back().content << std::endl;
             messages.push_back(QwenMessage{"user", prepared_query, "", "", {}});
         }
 
@@ -767,7 +770,7 @@ private:
             return qwen_client().chat_completion(messages).content;
         }
 
-        std::cout << log_prefix() << " 当前候选工具: "
+        std::cout << log_prefix() << " 当前 RAG-MCP 候选工具: "
                   << join_tool_names(tool_context.visible_tool_names) << std::endl;
 
         for (int round = 0; round < max_tool_rounds(); ++round) {
