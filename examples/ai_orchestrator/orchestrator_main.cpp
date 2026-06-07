@@ -557,6 +557,52 @@ private:
     }
 
     /**
+     * @brief 基于规则判断是否明显属于运维巡检或服务器诊断问题
+     * @param text 用户输入
+     * @return true 表示高概率应路由到 Ops Agent
+     */
+    static bool is_likely_ops_query(const std::string& text) {
+        if (is_likely_code_query(text)) {
+            return false;
+        }
+
+        const std::string normalized = normalize_math_symbols(text);
+        const std::string lower_text = to_lower_copy(normalized);
+
+        const std::vector<std::string> explicit_ops_phrases = {
+            "服务器状态", "系统状态", "系统负载", "cpu占用", "cpu 使用率",
+            "磁盘空间", "磁盘占用", "网络状态", "网络流量", "网络吞吐",
+            "top 进程", "top进程", "实验室服务器", "运维巡检", "服务器巡检"
+        };
+        if (contains_any(lower_text, explicit_ops_phrases)) {
+            return true;
+        }
+
+        const std::vector<std::string> server_keywords = {
+            "运维", "服务器", "主机", "机器", "节点", "集群", "server", "ops"
+        };
+        const std::vector<std::string> metric_keywords = {
+            "cpu", "负载", "load", "磁盘", "disk", "inode", "空间",
+            "网络", "网卡", "带宽", "吞吐", "流量", "丢包", "延迟",
+            "进程", "卡顿", "很卡", "响应慢", "慢", "memory", "内存"
+        };
+        if (contains_any(lower_text, server_keywords) &&
+            contains_any(lower_text, metric_keywords)) {
+            return true;
+        }
+
+        const std::vector<std::string> action_keywords = {
+            "检查", "查看", "看看", "监控", "排查", "分析", "诊断",
+            "状态", "占用", "使用率", "是否正常", "告警", "满了", "异常"
+        };
+        const std::vector<std::string> direct_metric_keywords = {
+            "cpu", "磁盘", "disk", "网络", "带宽", "流量", "负载", "inode", "top"
+        };
+        return contains_any(lower_text, direct_metric_keywords) &&
+               contains_any(lower_text, action_keywords);
+    }
+
+    /**
      * @brief 提取模型输出中的首条有效结果
      * @param text 模型原始回复
      * @return 单行、去前缀后的文本
@@ -755,6 +801,9 @@ private:
                 if (intent == "math") {
                     // 数学请求改写和工具调用都由 Math Agent 自主完成，编排器只负责路由。
                     response_text = call_math_agent(user_text, context_id);
+                } else if (intent == "ops") {
+                    // 运维请求由 Ops Agent 负责调用观测工具并生成诊断建议。
+                    response_text = call_ops_agent(user_text, context_id);
                 } else if (intent == "code") {
                     // 动态查找 Code Agent
                     response_text = call_code_agent(user_text, context_id);
@@ -762,6 +811,7 @@ private:
                     // 通用对话由专用 General Agent 处理。
                     response_text = call_general_agent(user_text, context_id);
                 }
+                std::cout << "[Orchestrator] 下游 Agent-" << intent << " 响应: " << response_text << std::endl;
                 
                 // 无论回复来自哪个下游 Agent，都统一写回 orchestrator 的会话历史。
                 auto response_msg = AgentMessage::create()
@@ -867,6 +917,9 @@ private:
             if (intent == "math") {
                 // 数学请求改写和工具调用都由 Math Agent 自主完成，编排器只负责路由。
                 response_text = call_math_agent(user_text, context_id);
+            } else if (intent == "ops") {
+                // 运维请求由 Ops Agent 负责调用观测工具并生成诊断建议。
+                response_text = call_ops_agent(user_text, context_id);
             } else if (intent == "code") {
                 response_text = call_code_agent(user_text, context_id);
             } else {
@@ -958,7 +1011,7 @@ private:
     /**
      * @brief 使用大模型做轻量意图分类
      * @param text 用户原始输入
-     * @return math、code 或 general
+     * @return math、code、ops 或 general
      *
      * 这里对模型输出做包含判断，而不是要求完全等于类别名，
      * 是为了兼容模型偶尔返回解释文本的情况。
@@ -972,14 +1025,20 @@ private:
             return "math";
         }
 
+        if (is_likely_ops_query(text)) {
+            return "ops";
+        }
+
         const std::string system_prompt =
             "你是 AI Orchestrator 的意图分类器。"
-            "你只能从 math、code、general 三个标签中选择一个，并且只输出标签本身。\n"
+            "你只能从 math、code、ops、general 四个标签中选择一个，并且只输出标签本身。\n"
             "分类规则：\n"
             "1. math：数学计算、表达式求值、方程、几何、概率统计、微积分，以及像“1+1”、“计算1+1”、“(3+5)*2”、“解 x^2-4=0”这类输入。\n"
             "2. code：编程、代码解释、报错排查、脚本、SQL、接口、开发工具，以及在明确编程语境中讨论表达式。\n"
-            "3. general：其他普通对话。\n"
+            "3. ops：服务器状态巡检、CPU/磁盘/网络检查、top 进程、负载异常、服务器卡顿与运维诊断。\n"
+            "4. general：其他普通对话。\n"
             "如果同时出现数学表达式和明显编程语境，例如“C++里 1+1 的结果”或“写代码计算 1+1”，优先返回 code。\n"
+            "如果同时出现服务器和指标检查语义，例如“帮我看看服务器 CPU 和磁盘状态”，优先返回 ops。\n"
             "输出要求：只能输出一个小写标签，不要解释，不要标点。";
 
         try {
@@ -991,6 +1050,9 @@ private:
             }
             if (result.find("code") != std::string::npos) {
                 return "code";
+            }
+            if (result.find("ops") != std::string::npos) {
+                return "ops";
             }
             if (result.find("general") != std::string::npos) {
                 return "general";
@@ -1008,6 +1070,10 @@ private:
     
     std::string call_code_agent(const std::string& query, const std::string& context_id) {
         return call_agent_by_tag("code", query, context_id);
+    }
+
+    std::string call_ops_agent(const std::string& query, const std::string& context_id) {
+        return call_agent_by_tag("ops", query, context_id);
     }
 
     std::string call_general_agent(const std::string& query,
@@ -1103,7 +1169,7 @@ private:
     std::string get_agent_card() {
         json card = {
             {"name", "AI Orchestrator Agent"},
-            {"description", "智能协调器，负责意图识别和任务分发"},
+            {"description", "Orchestrator Agent：负责意图识别和任务分发"},
             {"version", "1.0.0"},
             {"capabilities", {
                 {"streaming", true},

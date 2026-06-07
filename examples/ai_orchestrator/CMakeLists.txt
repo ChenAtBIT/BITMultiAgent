@@ -99,6 +99,36 @@ target_link_libraries(ai_general_agent
     ${HIREDIS_LIBRARIES}
 )
 
+# Ops Agent 可执行文件（服务器状态巡检与运维诊断）
+add_executable(ai_ops_agent
+    ops_agent_main.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../a2a/src/examples/redis_task_store.cpp
+)
+
+target_include_directories(ai_ops_agent PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../a2a/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../a2a/include/a2a/examples
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../a2a/third_party
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../orchestrator/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../mcp_client/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../common/include
+    ${CMAKE_BINARY_DIR}/proto
+    ${HIREDIS_INCLUDE_DIRS}
+)
+
+target_link_libraries(ai_ops_agent
+    a2a
+    orchestrator
+    agent_rpc_mcp
+    proto_lib
+    ${GRPC_LIBRARIES}
+    ${PROTOBUF_LIBRARIES}
+    CURL::libcurl
+    Threads::Threads
+    ${HIREDIS_LIBRARIES}
+)
+
 # Registry Server 可执行文件
 add_executable(ai_registry_server
     registry_server_main.cpp

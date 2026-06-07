@@ -12,16 +12,14 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                         单机服务器                               │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │
-│  │ RPC Server  │  │ Orchestrator│  │ Math Agent  │             │
-│  │   :50051    │  │   :5000     │  │   :5001     │             │
-│  └─────────────┘  └─────────────┘  └─────────────┘             │
-│         │                │                │                     │
-│         └────────────────┴────────────────┘                     │
+│  │ RPC Server  │  │ Orchestrator│  │  Registry   │             │
+│  │   :50051    │  │   :5000     │  │   :8500     │             │
+│  └─────────────┘  └──────┬──────┘  └─────────────┘             │
 │                          │                                      │
-│                    ┌─────────────┐                              │
-│                    │  Registry   │                              │
-│                    │   :8500     │                              │
-│                    └─────────────┘                              │
+│   ┌─────────────┐  ┌─────┴─────┐  ┌─────────────┐              │
+│   │ Math Agent  │  │General Ag.│  │  Ops Agent  │              │
+│   │   :5001     │  │   :5002   │  │   :5003     │              │
+│   └─────────────┘  └───────────┘  └─────────────┘              │
 │                          │                                      │
 │                    ┌─────────────┐                              │
 │                    │ MCP Server  │                              │
@@ -55,7 +53,7 @@
          ┌───────────────────────┼───────────────────────┐
          ▼                       ▼                       ▼
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Math Agent    │     │   Code Agent    │     │  Other Agents   │
+│   Math Agent    │     │    Ops Agent    │     │  Other Agents   │
 │   (多实例)       │     │   (多实例)       │     │   (多实例)       │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
                                  │
@@ -138,6 +136,7 @@ DASHSCOPE_API_KEY=sk-your-dashscope-api-key
 # 服务配置
 RPC_SERVER_PORT=50051
 ORCHESTRATOR_URL=http://localhost:5000
+OPS_AGENT_PORT=5003
 REGISTRY_URL=http://localhost:8500
 
 # Redis 配置
@@ -286,6 +285,32 @@ LimitNOFILE=65535
 WantedBy=multi-user.target
 ```
 
+### Ops Agent 服务
+
+创建 `/etc/systemd/system/agent-ops.service`:
+
+```ini
+[Unit]
+Description=Ops Agent
+After=network.target agent-registry.service
+
+[Service]
+Type=simple
+User=agent-rpc
+Group=agent-rpc
+EnvironmentFile=/etc/agent-rpc/env
+ExecStart=/opt/agent-rpc/bin/ai_ops_agent \
+    ops-agent-001 5003 http://localhost:8500 ${QWEN_API_KEY} \
+    --enable-mcp \
+    --mcp-server /opt/agent-rpc/mcp_server
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+```
+
 ### Registry 服务
 
 创建 `/etc/systemd/system/agent-registry.service`:
@@ -317,12 +342,14 @@ sudo systemctl daemon-reload
 # 启动服务
 sudo systemctl start agent-registry
 sudo systemctl start agent-math
+sudo systemctl start agent-ops
 sudo systemctl start agent-orchestrator
 sudo systemctl start agent-rpc-server
 
 # 设置开机启动
 sudo systemctl enable agent-registry
 sudo systemctl enable agent-math
+sudo systemctl enable agent-ops
 sudo systemctl enable agent-orchestrator
 sudo systemctl enable agent-rpc-server
 
@@ -504,11 +531,17 @@ chown agent-rpc:agent-rpc /etc/agent-rpc/ssl/*
 # UFW
 sudo ufw allow 50051/tcp  # gRPC
 sudo ufw allow 5000/tcp   # Orchestrator
+sudo ufw allow 5001/tcp   # Math Agent
+sudo ufw allow 5002/tcp   # General Agent
+sudo ufw allow 5003/tcp   # Ops Agent
 sudo ufw allow 8500/tcp   # Registry
 
 # iptables
 iptables -A INPUT -p tcp --dport 50051 -j ACCEPT
 iptables -A INPUT -p tcp --dport 5000 -j ACCEPT
+iptables -A INPUT -p tcp --dport 5001 -j ACCEPT
+iptables -A INPUT -p tcp --dport 5002 -j ACCEPT
+iptables -A INPUT -p tcp --dport 5003 -j ACCEPT
 iptables -A INPUT -p tcp --dport 8500 -j ACCEPT
 ```
 
@@ -533,7 +566,16 @@ export QWEN_API_KEY=$(vault kv get -field=qwen_api_key secret/agent-rpc)
 curl http://localhost:50051/health
 
 # 检查 Orchestrator
-curl http://localhost:5000/health
+curl http://localhost:5000/.well-known/agent-card.json
+
+# 检查 Math Agent
+curl http://localhost:5001/.well-known/agent-card.json
+
+# 检查 General Agent
+curl http://localhost:5002/.well-known/agent-card.json
+
+# 检查 Ops Agent
+curl http://localhost:5003/.well-known/agent-card.json
 
 # 检查 Registry
 curl http://localhost:8500/health
@@ -559,7 +601,10 @@ check_service() {
 }
 
 check_service "Registry" "http://localhost:8500/health"
-check_service "Orchestrator" "http://localhost:5000/health"
+check_service "Orchestrator" "http://localhost:5000/.well-known/agent-card.json"
+check_service "Math Agent" "http://localhost:5001/.well-known/agent-card.json"
+check_service "General Agent" "http://localhost:5002/.well-known/agent-card.json"
+check_service "Ops Agent" "http://localhost:5003/.well-known/agent-card.json"
 check_service "RPC Server" "http://localhost:50051/health"
 ```
 
@@ -630,7 +675,7 @@ cp /var/lib/agent-rpc/index.json $BACKUP_DIR/
 BACKUP_DIR=$1
 
 # 停止服务
-systemctl stop agent-rpc-server agent-orchestrator agent-math agent-registry
+systemctl stop agent-rpc-server agent-orchestrator agent-ops agent-math agent-registry
 
 # 恢复配置
 cp -r $BACKUP_DIR/config/* /etc/agent-rpc/
@@ -642,7 +687,7 @@ cp $BACKUP_DIR/dump.rdb /var/lib/redis/
 cp $BACKUP_DIR/index.json /var/lib/agent-rpc/
 
 # 启动服务
-systemctl start agent-registry agent-math agent-orchestrator agent-rpc-server
+systemctl start agent-registry agent-math agent-ops agent-orchestrator agent-rpc-server
 ```
 
 ## 升级流程
@@ -658,7 +703,7 @@ wget https://releases.example.com/agent-rpc-v1.2.0.tar.gz
 tar xzf agent-rpc-v1.2.0.tar.gz
 
 # 3. 逐个升级服务
-for service in agent-math agent-orchestrator agent-rpc-server; do
+for service in agent-math agent-ops agent-orchestrator agent-rpc-server; do
     systemctl stop $service
     cp -r agent-rpc-v1.2.0/bin/* /opt/agent-rpc/bin/
     systemctl start $service

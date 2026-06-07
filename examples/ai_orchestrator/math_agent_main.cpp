@@ -185,7 +185,7 @@ protected:
     react_json build_agent_card_json() const override {
         return {
             {"name", "Math Agent"},
-            {"description", "基于通用 ReAct 模板的数学计算与求解 Agent"},
+            {"description", "Math Agent：负责数学计算与求解"},
             {"version", "2.0.0"},
             {"capabilities", {
                 {"streaming", true},
@@ -196,12 +196,6 @@ protected:
                 {
                     {"name", "数学问题改写"},
                     {"description", "将多轮对话中的数学请求改写成可求解的自包含任务"},
-                    {"input_modes", react_json::array({"text"})},
-                    {"output_modes", react_json::array({"text"})}
-                },
-                {
-                    {"name", "ReAct 工具调用"},
-                    {"description", "自主决定是否调用数学工具，并整合工具结果完成回答"},
                     {"input_modes", react_json::array({"text"})},
                     {"output_modes", react_json::array({"text"})}
                 }

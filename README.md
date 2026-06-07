@@ -133,14 +133,13 @@ agent-communication/
 │  │  └─────────────┘  └──────┬──────┘  └─────────────┘                  │   │
 │  └──────────────────────────┼──────────────────────────────────────────┘   │
 │                             │                                               │
-│            ┌────────────────┼────────────────┐                             │
-│            ▼                ▼                ▼                             │
-│  ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐              │
-│  │   Math Agent    │ │  General Agent  │ │   知识库 Agent   │              │
-│  │                 │ │                 │ │    (可扩展)      │              │
-│  │   端口 5001     │ │   端口 5002     │ │                 │              │
-│  │  + MCP Tools    │ │  无工具直答     │ │  + MCP Tools    │              │
-│  └─────────────────┘ └─────────────────┘ └─────────────────┘              │
+│       ┌────────────┼────────────┬────────────┐                             │
+│       ▼            ▼            ▼            ▼                             │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────────┐      │
+│  │ Math Agent  │ │General Agent│ │  Ops Agent  │ │   知识库 Agent   │      │
+│  │ 端口 5001   │ │ 端口 5002   │ │ 端口 5003   │ │    (可扩展)      │      │
+│  │ + MCP Tools │ │ 无工具直答  │ │ + MCP Tools │ │   + MCP Tools    │      │
+│  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────────┘      │
 │                                                                            │
 │  ┌─────────────────────────────────────────────────────────────────────┐  │
 │  │                      Registry Server                                 │  │
@@ -152,14 +151,15 @@ agent-communication/
 ### 数据流向
 
 ```
-1. 用户输入 "1+7" 或 "什么是人工智能"
+1. 用户输入 "1+7"、"什么是人工智能" 或 "帮我看下服务器 CPU 和磁盘状态"
 2. rpc_client → gRPC → rpc_server (端口 50051)
 3. rpc_server → A2A Adapter → Orchestrator (端口 5000)
-4. Orchestrator 识别意图为 "math" / "general"
+4. Orchestrator 识别意图为 "math" / "ops" / "general"
 5. math 请求：Orchestrator → Math Agent (端口 5001)
 6. Math Agent 调用 MCP calculator 工具并返回结果 "1+7 = 8"
-7. general 请求：Orchestrator → General Agent (端口 5002)，直接基于上下文回答
-8. 响应原路返回给用户
+7. ops 请求：Orchestrator → Ops Agent (端口 5003)，调用 CPU/磁盘/网络/进程工具生成诊断建议
+8. general 请求：Orchestrator → General Agent (端口 5002)，直接基于上下文回答
+9. 响应原路返回给用户
 ```
 
 ---
@@ -231,6 +231,7 @@ ls -la build/mcp_client/libagent_rpc_mcp.a
 ls -la build/examples/ai_orchestrator/ai_orchestrator
 ls -la build/examples/ai_orchestrator/ai_math_agent
 ls -la build/examples/ai_orchestrator/ai_general_agent
+ls -la build/examples/ai_orchestrator/ai_ops_agent
 ls -la build/examples/ai_orchestrator/ai_registry_server
 ls -la build/mcp_server/mcp_server
 ```
@@ -240,10 +241,11 @@ ls -la build/mcp_server/mcp_server
 ## 快速启动（完整功能版）
 
 本快速启动将启动项目的**所有功能**，包括：
-- ✅ 多 Agent 协作系统 (Registry + Orchestrator + Math Agent + General Agent)
-- ✅ MCP 工具调用 (calculator, add, subtract, multiply, divide, power, sqrt, factorial)
+- ✅ 多 Agent 协作系统 (Registry + Orchestrator + Math Agent + General Agent + Ops Agent)
+- ✅ MCP 工具调用 (calculator, add, subtract, multiply, divide, power, sqrt, factorial, get_system_overview, get_cpu_snapshot, get_disk_usage, get_network_snapshot, get_top_processes)
 - ✅ RAG-MCP 智能工具选择 (基于向量相似度动态检索相关工具，而非一次性提供所有工具给 LLM)
 - ✅ 通用问答 Agent (General Agent，处理 general 场景，直接回答且不调用工具)
+- ✅ 运维巡检 Agent (Ops Agent，负责 CPU、磁盘、网络、进程检查和建议生成)
 - ✅ gRPC 通信 (RPC Server + RPC Client)
 - ✅ A2A 协议通信
 - ✅ Redis 任务状态存储
@@ -282,10 +284,10 @@ redis-cli ping  # 应返回 PONG
 
 ```bash
 # 启动多 Agent 系统（包含 MCP 工具 + RAG 智能工具选择）
-# 这将启动: Registry Server (8500) + Math Agent (5001) + General Agent (5002) + Orchestrator (5000)
+# 这将启动: Registry Server (8500) + Math Agent (5001) + General Agent (5002) + Ops Agent (5003) + Orchestrator (5000)
 # 通过显式覆盖端口，使其与 RPC Server 默认连接配置保持一致
 # RAG 会自动将工具描述向量化，查询时动态检索最相关的工具
-REGISTRY_PORT=8500 ORCHESTRATOR_PORT=5000 MATH_AGENT_PORT=5001 GENERAL_AGENT_PORT=5002 \
+REGISTRY_PORT=8500 ORCHESTRATOR_PORT=5000 MATH_AGENT_PORT=5001 GENERAL_AGENT_PORT=5002 OPS_AGENT_PORT=5003 \
 ENABLE_MCP=true ENABLE_RAG=true ./examples/ai_orchestrator/start_system.sh
 ```
 
@@ -294,7 +296,7 @@ ENABLE_MCP=true ENABLE_RAG=true ./examples/ai_orchestrator/start_system.sh
 ==========================================
 AI Agent 系统启动
 ==========================================
-[1/4] 启动 Registry Server...
+[1/5] 启动 Registry Server...
 Registry Server 启动完成 (端口: 8500)
 MCP 已启用: /path/to/mcp_server
 MCP 插件目录: /path/to/plugins
@@ -302,11 +304,13 @@ MCP 日志目录: /path/to/logs
 RAG-MCP 已启用: 智能工具选择
   Top-K: 5
   相似度阈值: 0.3
-[2/4] 启动 Math Agent...
+[2/5] 启动 Math Agent...
 Math Agent 启动完成 (端口: 5001)
-[3/4] 启动 General Agent...
+[3/5] 启动 General Agent...
 General Agent 启动完成 (端口: 5002)
-[4/4] 启动 Orchestrator...
+[4/5] 启动 Ops Agent...
+Ops Agent 启动完成 (端口: 5003)
+[5/5] 启动 Orchestrator...
 Orchestrator 启动完成 (端口: 5000)
 
 ==========================================
@@ -365,6 +369,10 @@ AI: 人工智能是...（逐字输出）
 [default] > 如何提高会议纪要整理效率
 AI: 可以从模板标准化、关键信息提取、任务项拆分和会后回顾机制四个方面入手...
 
+# 运维巡检（路由到 Ops Agent，调用 server_observer 工具）
+[default] > 帮我看下服务器 CPU、磁盘和网络状态
+AI: 当前服务器整体状态正常/预警...（会给出结论、证据和建议）
+
 # 查看连接状态
 [default] > /status
 连接状态: 已连接
@@ -386,6 +394,7 @@ pkill -f rpc_server
 pkill -f ai_orchestrator
 pkill -f ai_math_agent
 pkill -f ai_general_agent
+pkill -f ai_ops_agent
 pkill -f ai_registry_server
 ```
 
@@ -409,6 +418,15 @@ grep -E "General Agent|初始化完成|已注册到服务中心" build/runtime/e
 # [General Agent] 初始化完成
 # [General Agent] 启动在端口 5002
 # [General Agent] 已注册到服务中心
+
+# 查看 Ops Agent 日志（应正常加载 server_observer 工具并注册成功）
+grep -E "Ops Agent|初始化完成|已注册到服务中心|get_system_overview|get_cpu_snapshot|get_disk_usage|get_network_snapshot|get_top_processes" build/runtime/examples/ai_orchestrator/logs/ops_agent.log
+
+# 预期输出:
+# [Ops Agent] MCP 已启用，可用工具: get_system_overview get_cpu_snapshot get_disk_usage get_network_snapshot get_top_processes ...
+# [Ops Agent] 初始化完成
+# [Ops Agent] 启动在端口 5003
+# [Ops Agent] 已注册到服务中心
 ```
 
 ### RAG 智能工具选择工作原理
@@ -570,10 +588,38 @@ cmake --build build --target ai_orchestrator -j$(nproc)
 # [General Agent] 已注册到服务中心
 ```
 
-### 步骤 5: 启动 Orchestrator（仅做路由与上下文管理）
+### 步骤 5: 启动 Ops Agent（服务器巡检与故障诊断）
 
 ```bash
-# 终端 4: Orchestrator (协调器，仅负责意图识别、上下文维护与 Agent 路由)
+# 终端 4: Ops Agent (运维专用 Agent + MCP 工具 + RAG 智能工具选择)
+# Agent_communication/examples/ai_orchestrator/ops_agent_main.cpp
+./build/examples/ai_orchestrator/ai_ops_agent \
+    ops-1 \
+    5003 \
+    http://localhost:8500 \
+    $QWEN_API_KEY \
+    --redis-host 127.0.0.1 \
+    --redis-port 6379 \
+    --enable-mcp \
+    --mcp-server $(pwd)/build/mcp_server/mcp_server \
+    --enable-rag \
+    --rag-top-k 6 \
+    --rag-threshold 0.3
+
+# 输出:
+# [RedisTaskStore] 连接到 Redis 127.0.0.1:6379
+# [RedisTaskStore] 连接成功
+# [INFO ] MCP client connected to server: .../mcp_server
+# [Ops Agent] MCP 已启用，可用工具: get_system_overview get_cpu_snapshot get_disk_usage get_network_snapshot get_top_processes ...
+# [Ops Agent] 初始化完成
+# [Ops Agent] 启动在端口 5003
+# [Ops Agent] 已注册到服务中心
+```
+
+### 步骤 6: 启动 Orchestrator（仅做路由与上下文管理）
+
+```bash
+# 终端 5: Orchestrator (协调器，仅负责意图识别、上下文维护与 Agent 路由)
 # Agent_communication/examples/ai_orchestrator/orchestrator_main.cpp
 ./build/examples/ai_orchestrator/ai_orchestrator \
     orch-1 \
@@ -591,10 +637,10 @@ cmake --build build --target ai_orchestrator -j$(nproc)
 # [Orchestrator] 已注册到服务中心
 ```
 
-### 步骤 6: 启动 RPC Server
+### 步骤 7: 启动 RPC Server
 
 ```bash
-# 终端 5: RPC Server (gRPC 服务端)
+# 终端 6: RPC Server (gRPC 服务端)
 ./build/RPC_server/rpc_server
 
 # 输出:
@@ -613,10 +659,10 @@ cmake --build build --target ai_orchestrator -j$(nproc)
 # 超时时间:       60 秒
 ```
 
-### 步骤 7: 启动 RPC Client
+### 步骤 8: 启动 RPC Client
 
 ```bash
-# 终端 6: RPC Client (用户客户端)
+# 终端 7: RPC Client (用户客户端)
 # Agent_communication/RPC_client/src/main.cpp
 ./build/RPC_client/rpc_client
 
@@ -640,7 +686,7 @@ cmake --build build --target ai_orchestrator -j$(nproc)
 # [default] >
 ```
 
-### 步骤 8: 测试完整功能
+### 步骤 9: 测试完整功能
 
 ```bash
 # 在 RPC Client 中测试
@@ -680,6 +726,17 @@ AI: 人工智能是...（逐字输出）
 AI: 可以从模板标准化、关键信息提取、任务项拆分和会后回顾机制四个方面入手...
 [Agent: general-1, 耗时: 6xxms]
 
+# === 运维巡检（路由到 Ops Agent）===
+[default] > 帮我看下服务器 CPU、磁盘和网络状态
+思考中...
+AI: 当前服务器 CPU 负载正常，磁盘空间剩余充足，网络无明显丢包...
+[Agent: ops-1, 耗时: 8xxms]
+
+[default] > 服务器很卡，帮我排查一下
+思考中...
+AI: 我先检查了整体状态和 top 进程，当前 ...
+[Agent: ops-1, 耗时: 9xxms]
+
 # === 查看状态 ===
 [default] > /status
 连接状态: 已连接
@@ -691,7 +748,7 @@ AI: 可以从模板标准化、关键信息提取、任务项拆分和会后回�
 再见!
 ```
 
-### 步骤 9: 运行 RAG-MCP 示例
+### 步骤 10: 运行 RAG-MCP 示例
 
 ```bash
 # 单独运行 RAG-MCP 智能工具选择示例
@@ -741,7 +798,7 @@ AI: 可以从模板标准化、关键信息提取、任务项拆分和会后回�
 #   - ...
 ```
 
-### 步骤 9: 停止系统
+### 步骤 11: 停止系统
 
 ```bash
 # 方式 1: 使用停止脚本
@@ -752,6 +809,8 @@ AI: 可以从模板标准化、关键信息提取、任务项拆分和会后回�
 # 方式 3: 强制停止所有进程
 pkill -f ai_orchestrator
 pkill -f ai_math_agent
+pkill -f ai_general_agent
+pkill -f ai_ops_agent
 pkill -f ai_registry_server
 pkill -f rpc_server
 ```
@@ -787,6 +846,7 @@ gRPC 服务端和客户端，提供 AI 查询接口。
 | Orchestrator | 5000 | 协调器，意图识别，任务分发 |
 | Math Agent | 5001 | 数学计算专业 Agent |
 | General Agent | 5002 | 通用问答 Agent，处理 general 场景且不调用工具 |
+| Ops Agent | 5003 | 运维巡检 Agent，负责 CPU、磁盘、网络、进程诊断 |
 
 ### 3. MCP 工具
 
@@ -802,6 +862,11 @@ gRPC 服务端和客户端，提供 AI 查询接口。
 | power | 幂运算 | `power(2, 10)` → `1024` |
 | sqrt | 平方根 | `sqrt(16)` → `4` |
 | factorial | 阶乘 | `factorial(5)` → `120` |
+| get_system_overview | 服务器整体状态概览 | 巡检 CPU、磁盘、网络与 top 进程 |
+| get_cpu_snapshot | CPU 快照 | 采样 CPU 使用率与负载 |
+| get_disk_usage | 磁盘使用情况 | 查看 `/` 或指定路径空间使用率 |
+| get_network_snapshot | 网络状态快照 | 采样吞吐、丢包和错误包 |
+| get_top_processes | Top 进程列表 | 查看最占 CPU 或内存的进程 |
 
 ### 4. MCP Client 传输方式
 
@@ -995,6 +1060,21 @@ export RAG_THRESHOLD=0.3
 选项:
   --redis-host <host>     Redis 主机 (默认: 127.0.0.1)
   --redis-port <port>     Redis 端口 (默认: 6379)
+
+# Ops Agent 参数
+./ai_ops_agent <agent_id> <port> <registry_url> <api_key> [选项]
+
+选项:
+  --redis-host <host>     Redis 主机 (默认: 127.0.0.1)
+  --redis-port <port>     Redis 端口 (默认: 6379)
+  --enable-mcp            启用 MCP 工具
+  --mcp-server <path>     MCP Server 路径
+  --mcp-args <args>       MCP Server 参数 (逗号分隔)
+  --enable-rag            启用 RAG 智能工具选择
+  --rag-api-key <key>     DashScope API Key (也可通过环境变量设置)
+  --rag-top-k <n>         返回工具数量 (默认: 6)
+  --rag-threshold <f>     相似度阈值 (默认: 0.3)
+  --rag-model <model>     Embedding 模型 (默认: text-embedding-v2)
 
 # Orchestrator 参数
 ./ai_orchestrator <agent_id> <port> <registry_url> <api_key> [选项]
