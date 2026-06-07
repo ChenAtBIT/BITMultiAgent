@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # AI Agent 系统启动脚本
-# 启动顺序: Registry -> Math Agent -> General Agent -> Ops Agent -> Orchestrator
+# 启动顺序: Registry -> Math Agent -> General Agent -> Ops Agent -> Minutes Agent -> Orchestrator
 
 set -e
 
@@ -24,6 +24,7 @@ REQUIRED_BINS=(
     "ai_math_agent"
     "ai_general_agent"
     "ai_ops_agent"
+    "ai_minutes_agent"
     "ai_orchestrator"
     "ai_client"
 )
@@ -43,6 +44,7 @@ ORCHESTRATOR_PORT="${ORCHESTRATOR_PORT:-15004}"
 MATH_AGENT_PORT="${MATH_AGENT_PORT:-15005}"
 GENERAL_AGENT_PORT="${GENERAL_AGENT_PORT:-15006}"
 OPS_AGENT_PORT="${OPS_AGENT_PORT:-15007}"
+MINUTES_AGENT_PORT="${MINUTES_AGENT_PORT:-15008}"
 REDIS_HOST="127.0.0.1" # Redis 默认地址
 REDIS_PORT=6379 # Redis 默认端口
 
@@ -92,7 +94,7 @@ wait_for_service() {
             echo "最近日志:"
             tail -n 20 "$log_file"
         fi
-        echo "提示: 如果端口被占用，可通过 REGISTRY_PORT / ORCHESTRATOR_PORT / MATH_AGENT_PORT / GENERAL_AGENT_PORT / OPS_AGENT_PORT 覆盖默认端口"
+        echo "提示: 如果端口被占用，可通过 REGISTRY_PORT / ORCHESTRATOR_PORT / MATH_AGENT_PORT / GENERAL_AGENT_PORT / OPS_AGENT_PORT / MINUTES_AGENT_PORT 覆盖默认端口"
         cleanup_failed_start
         exit 1
     fi
@@ -105,7 +107,7 @@ echo "AI Agent 系统启动"
 echo "=========================================="
 
 # 1. 启动 Registry Server
-echo "[1/4] 启动 Registry Server..."
+echo "[1/6] 启动 Registry Server..."
 "$BIN_DIR/ai_registry_server" $REGISTRY_PORT > "$LOG_DIR/registry.log" 2>&1 &
 registry_pid=$!
 echo $registry_pid > "$PID_DIR/registry.pid"
@@ -134,28 +136,35 @@ elif [ "$ENABLE_RAG" == "true" ] && [ -z "$DASHSCOPE_API_KEY" ]; then
 fi
 
 # 2. 启动 Math Agent
-echo "[2/5] 启动 Math Agent..."
+echo "[2/6] 启动 Math Agent..."
 "$BIN_DIR/ai_math_agent" math-1 $MATH_AGENT_PORT http://localhost:$REGISTRY_PORT $API_KEY --redis-host $REDIS_HOST --redis-port $REDIS_PORT $MCP_ARGS $RAG_ARGS > "$LOG_DIR/math_agent.log" 2>&1 &
 math_agent_pid=$!
 echo $math_agent_pid > "$PID_DIR/math_agent.pid"
 wait_for_service "Math Agent" "$math_agent_pid" "$MATH_AGENT_PORT" "$LOG_DIR/math_agent.log"
 
 # 3. 启动 General Agent（显式不透传 MCP 参数，保证通用问答不走工具）
-echo "[3/5] 启动 General Agent..."
+echo "[3/6] 启动 General Agent..."
 "$BIN_DIR/ai_general_agent" general-1 $GENERAL_AGENT_PORT http://localhost:$REGISTRY_PORT $API_KEY --redis-host $REDIS_HOST --redis-port $REDIS_PORT > "$LOG_DIR/general_agent.log" 2>&1 &
 general_agent_pid=$!
 echo $general_agent_pid > "$PID_DIR/general_agent.pid"
 wait_for_service "General Agent" "$general_agent_pid" "$GENERAL_AGENT_PORT" "$LOG_DIR/general_agent.log"
 
 # 4. 启动 Ops Agent（透传 MCP 参数，负责服务器状态巡检与诊断）
-echo "[4/5] 启动 Ops Agent..."
+echo "[4/6] 启动 Ops Agent..."
 "$BIN_DIR/ai_ops_agent" ops-1 $OPS_AGENT_PORT http://localhost:$REGISTRY_PORT $API_KEY --redis-host $REDIS_HOST --redis-port $REDIS_PORT $MCP_ARGS $RAG_ARGS > "$LOG_DIR/ops_agent.log" 2>&1 &
 ops_agent_pid=$!
 echo $ops_agent_pid > "$PID_DIR/ops_agent.pid"
 wait_for_service "Ops Agent" "$ops_agent_pid" "$OPS_AGENT_PORT" "$LOG_DIR/ops_agent.log"
 
-# 5. 启动 Orchestrator（只做路由，不直接使用 MCP）
-echo "[5/5] 启动 Orchestrator..."
+# 5. 启动 Minutes Agent（透传 MCP 参数，负责会议文件纪要生成）
+echo "[5/6] 启动 Minutes Agent..."
+"$BIN_DIR/ai_minutes_agent" minutes-1 $MINUTES_AGENT_PORT http://localhost:$REGISTRY_PORT $API_KEY --redis-host $REDIS_HOST --redis-port $REDIS_PORT $MCP_ARGS $RAG_ARGS > "$LOG_DIR/minutes_agent.log" 2>&1 &
+minutes_agent_pid=$!
+echo $minutes_agent_pid > "$PID_DIR/minutes_agent.pid"
+wait_for_service "Minutes Agent" "$minutes_agent_pid" "$MINUTES_AGENT_PORT" "$LOG_DIR/minutes_agent.log"
+
+# 6. 启动 Orchestrator（只做路由，不直接使用 MCP）
+echo "[6/6] 启动 Orchestrator..."
 "$BIN_DIR/ai_orchestrator" orch-1 $ORCHESTRATOR_PORT http://localhost:$REGISTRY_PORT $API_KEY --redis-host $REDIS_HOST --redis-port $REDIS_PORT > "$LOG_DIR/orchestrator.log" 2>&1 &
 orchestrator_pid=$!
 echo $orchestrator_pid > "$PID_DIR/orchestrator.pid"
@@ -172,6 +181,7 @@ echo "  Orchestrator: http://localhost:$ORCHESTRATOR_PORT"
 echo "  Math Agent:   http://localhost:$MATH_AGENT_PORT"
 echo "  General Agent:http://localhost:$GENERAL_AGENT_PORT"
 echo "  Ops Agent:    http://localhost:$OPS_AGENT_PORT"
+echo "  Minutes Agent:http://localhost:$MINUTES_AGENT_PORT"
 echo ""
 echo "使用客户端连接:"
 echo "  $BIN_DIR/ai_client http://localhost:$ORCHESTRATOR_PORT"

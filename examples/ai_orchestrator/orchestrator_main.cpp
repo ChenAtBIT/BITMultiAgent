@@ -269,6 +269,27 @@ private:
     }
 
     /**
+     * @brief 判断文本中是否包含本地文件路径线索
+     * @param text 用户输入
+     * @return true 表示较像“带文件路径的任务”
+     */
+    static bool contains_file_path_hint(const std::string& text) {
+        const std::string lowered = to_lower_copy(text);
+        const bool has_extension = contains_any(lowered, {
+            ".txt", ".md", ".markdown", ".log", ".csv", ".json",
+            ".doc", ".docx", ".rtf"
+        });
+        const bool has_path_separator =
+            text.find('/') != std::string::npos ||
+            text.find('\\') != std::string::npos;
+        const bool has_file_keyword = contains_any(lowered, {
+            "文件", "路径", "path", "目录"
+        });
+
+        return has_extension || (has_path_separator && has_file_keyword);
+    }
+
+    /**
      * @brief 统一常见数学符号写法
      * @param text 用户输入
      * @return 做过基础符号归一化的文本
@@ -603,6 +624,50 @@ private:
     }
 
     /**
+     * @brief 基于规则判断是否明显属于会议纪要生成任务
+     * @param text 用户输入
+     * @return true 表示高概率应路由到 Minutes Agent
+     */
+    static bool is_likely_minutes_query(const std::string& text) {
+        if (is_likely_code_query(text) ||
+            is_likely_math_query(text) ||
+            is_likely_ops_query(text)) {
+            return false;
+        }
+
+        const std::string normalized = normalize_math_symbols(text);
+        const std::string lower_text = to_lower_copy(normalized);
+
+        const std::vector<std::string> explicit_minutes_phrases = {
+            "会议纪要", "生成纪要", "整理纪要", "输出纪要",
+            "meeting minutes", "meeting notes"
+        };
+        const std::vector<std::string> meeting_keywords = {
+            "会议", "纪要", "会议记录", "会议转写", "会后总结",
+            "讨论记录", "action item", "minutes", "transcript"
+        };
+        const std::vector<std::string> action_keywords = {
+            "生成", "整理", "总结", "提炼", "输出", "写", "写成",
+            "归纳", "保存", "导出", "markdown", "md"
+        };
+        const std::vector<std::string> source_keywords = {
+            "根据", "基于", "读取", "文件", "路径", "记录", "转写", "内容", "文档"
+        };
+
+        const bool has_minutes_phrase = contains_any(lower_text, explicit_minutes_phrases);
+        const bool has_meeting_keyword = contains_any(lower_text, meeting_keywords);
+        const bool has_action_keyword = contains_any(lower_text, action_keywords);
+        const bool has_source_hint = contains_any(lower_text, source_keywords) ||
+                                     contains_file_path_hint(normalized);
+
+        if (has_minutes_phrase && has_action_keyword && has_source_hint) {
+            return true;
+        }
+
+        return has_meeting_keyword && has_action_keyword && has_source_hint;
+    }
+
+    /**
      * @brief 提取模型输出中的首条有效结果
      * @param text 模型原始回复
      * @return 单行、去前缀后的文本
@@ -804,6 +869,9 @@ private:
                 } else if (intent == "ops") {
                     // 运维请求由 Ops Agent 负责调用观测工具并生成诊断建议。
                     response_text = call_ops_agent(user_text, context_id);
+                } else if (intent == "minutes") {
+                    // 会议纪要任务由 Minutes Agent 负责读取会议文件并生成 Markdown 结果。
+                    response_text = call_minutes_agent(user_text, context_id);
                 } else if (intent == "code") {
                     // 动态查找 Code Agent
                     response_text = call_code_agent(user_text, context_id);
@@ -920,6 +988,9 @@ private:
             } else if (intent == "ops") {
                 // 运维请求由 Ops Agent 负责调用观测工具并生成诊断建议。
                 response_text = call_ops_agent(user_text, context_id);
+            } else if (intent == "minutes") {
+                // 会议纪要任务由 Minutes Agent 负责读取会议文件并生成 Markdown 结果。
+                response_text = call_minutes_agent(user_text, context_id);
             } else if (intent == "code") {
                 response_text = call_code_agent(user_text, context_id);
             } else {
@@ -1011,7 +1082,7 @@ private:
     /**
      * @brief 使用大模型做轻量意图分类
      * @param text 用户原始输入
-     * @return math、code、ops 或 general
+     * @return math、code、ops、minutes 或 general
      *
      * 这里对模型输出做包含判断，而不是要求完全等于类别名，
      * 是为了兼容模型偶尔返回解释文本的情况。
@@ -1029,16 +1100,22 @@ private:
             return "ops";
         }
 
+        if (is_likely_minutes_query(text)) {
+            return "minutes";
+        }
+
         const std::string system_prompt =
             "你是 AI Orchestrator 的意图分类器。"
-            "你只能从 math、code、ops、general 四个标签中选择一个，并且只输出标签本身。\n"
+            "你只能从 math、code、ops、minutes、general 五个标签中选择一个，并且只输出标签本身。\n"
             "分类规则：\n"
             "1. math：数学计算、表达式求值、方程、几何、概率统计、微积分，以及像“1+1”、“计算1+1”、“(3+5)*2”、“解 x^2-4=0”这类输入。\n"
             "2. code：编程、代码解释、报错排查、脚本、SQL、接口、开发工具，以及在明确编程语境中讨论表达式。\n"
             "3. ops：服务器状态巡检、CPU/磁盘/网络检查、top 进程、负载异常、服务器卡顿与运维诊断。\n"
-            "4. general：其他普通对话。\n"
+            "4. minutes：根据会议记录、会议转写或会议文件路径生成会议纪要、行动项总结、Markdown 纪要输出。\n"
+            "5. general：其他普通对话。\n"
             "如果同时出现数学表达式和明显编程语境，例如“C++里 1+1 的结果”或“写代码计算 1+1”，优先返回 code。\n"
             "如果同时出现服务器和指标检查语义，例如“帮我看看服务器 CPU 和磁盘状态”，优先返回 ops。\n"
+            "如果出现会议文件路径、会议记录/转写整理、输出 Markdown 纪要等语义，优先返回 minutes。\n"
             "输出要求：只能输出一个小写标签，不要解释，不要标点。";
 
         try {
@@ -1053,6 +1130,9 @@ private:
             }
             if (result.find("ops") != std::string::npos) {
                 return "ops";
+            }
+            if (result.find("minutes") != std::string::npos) {
+                return "minutes";
             }
             if (result.find("general") != std::string::npos) {
                 return "general";
@@ -1074,6 +1154,11 @@ private:
 
     std::string call_ops_agent(const std::string& query, const std::string& context_id) {
         return call_agent_by_tag("ops", query, context_id);
+    }
+
+    std::string call_minutes_agent(const std::string& query,
+                                   const std::string& context_id) {
+        return call_agent_by_tag("minutes", query, context_id);
     }
 
     std::string call_general_agent(const std::string& query,
@@ -1179,7 +1264,7 @@ private:
             {"skills", json::array({
                 {
                     {"name", "意图识别"},
-                    {"description", "识别用户意图并路由到相应的专业 Agent"},
+                    {"description", "识别用户意图并路由到 math、ops、minutes、general 等专业 Agent"},
                     {"input_modes", json::array({"text"})},
                     {"output_modes", json::array({"text"})}
                 },

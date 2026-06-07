@@ -133,13 +133,13 @@ agent-communication/
 │  │  └─────────────┘  └──────┬──────┘  └─────────────┘                  │   │
 │  └──────────────────────────┼──────────────────────────────────────────┘   │
 │                             │                                               │
-│       ┌────────────┼────────────┬────────────┐                             │
-│       ▼            ▼            ▼            ▼                             │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────────┐      │
-│  │ Math Agent  │ │General Agent│ │  Ops Agent  │ │   知识库 Agent   │      │
-│  │ 端口 5001   │ │ 端口 5002   │ │ 端口 5003   │ │    (可扩展)      │      │
-│  │ + MCP Tools │ │ 无工具直答  │ │ + MCP Tools │ │   + MCP Tools    │      │
-│  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────────┘      │
+│   ┌────────────┬────────────┬────────────┬────────────┬────────────────┐   │
+│   ▼            ▼            ▼            ▼            ▼                │   │
+│ ┌─────────────┐┌─────────────┐┌─────────────┐┌─────────────┐┌──────────┐│   │
+│ │ Math Agent  ││General Agent││  Ops Agent  ││Minutes Agent││知识库Agent││   │
+│ │ 端口 5001   ││ 端口 5002   ││ 端口 5003   ││ 端口 5004   ││ (可扩展)  ││   │
+│ │ + MCP Tools ││ 无工具直答  ││ + MCP Tools ││ + MCP Tools ││ + MCP工具 ││   │
+│ └─────────────┘└─────────────┘└─────────────┘└─────────────┘└──────────┘│   │
 │                                                                            │
 │  ┌─────────────────────────────────────────────────────────────────────┐  │
 │  │                      Registry Server                                 │  │
@@ -151,15 +151,16 @@ agent-communication/
 ### 数据流向
 
 ```
-1. 用户输入 "1+7"、"什么是人工智能" 或 "帮我看下服务器 CPU 和磁盘状态"
+1. 用户输入 "1+7"、"什么是人工智能"、"帮我看下服务器 CPU 和磁盘状态" 或 "根据会议文件路径生成纪要"
 2. rpc_client → gRPC → rpc_server (端口 50051)
 3. rpc_server → A2A Adapter → Orchestrator (端口 5000)
-4. Orchestrator 识别意图为 "math" / "ops" / "general"
+4. Orchestrator 识别意图为 "math" / "ops" / "minutes" / "general"
 5. math 请求：Orchestrator → Math Agent (端口 5001)
 6. Math Agent 调用 MCP calculator 工具并返回结果 "1+7 = 8"
 7. ops 请求：Orchestrator → Ops Agent (端口 5003)，调用 CPU/磁盘/网络/进程工具生成诊断建议
-8. general 请求：Orchestrator → General Agent (端口 5002)，直接基于上下文回答
-9. 响应原路返回给用户
+8. minutes 请求：Orchestrator → Minutes Agent (端口 5004)，调用文件读写工具生成并保存 Markdown 纪要
+9. general 请求：Orchestrator → General Agent (端口 5002)，直接基于上下文回答
+10. 响应原路返回给用户
 ```
 
 ---
@@ -232,6 +233,7 @@ ls -la build/examples/ai_orchestrator/ai_orchestrator
 ls -la build/examples/ai_orchestrator/ai_math_agent
 ls -la build/examples/ai_orchestrator/ai_general_agent
 ls -la build/examples/ai_orchestrator/ai_ops_agent
+ls -la build/examples/ai_orchestrator/ai_minutes_agent
 ls -la build/examples/ai_orchestrator/ai_registry_server
 ls -la build/mcp_server/mcp_server
 ```
@@ -241,11 +243,12 @@ ls -la build/mcp_server/mcp_server
 ## 快速启动（完整功能版）
 
 本快速启动将启动项目的**所有功能**，包括：
-- ✅ 多 Agent 协作系统 (Registry + Orchestrator + Math Agent + General Agent + Ops Agent)
-- ✅ MCP 工具调用 (calculator, add, subtract, multiply, divide, power, sqrt, factorial, get_system_overview, get_cpu_snapshot, get_disk_usage, get_network_snapshot, get_top_processes)
+- ✅ 多 Agent 协作系统 (Registry + Orchestrator + Math Agent + General Agent + Ops Agent + Minutes Agent)
+- ✅ MCP 工具调用 (calculator, add, subtract, multiply, divide, power, sqrt, factorial, get_system_overview, get_cpu_snapshot, get_disk_usage, get_network_snapshot, get_top_processes, read_text_file, write_text_file, derive_markdown_output_path)
 - ✅ RAG-MCP 智能工具选择 (基于向量相似度动态检索相关工具，而非一次性提供所有工具给 LLM)
 - ✅ 通用问答 Agent (General Agent，处理 general 场景，直接回答且不调用工具)
 - ✅ 运维巡检 Agent (Ops Agent，负责 CPU、磁盘、网络、进程检查和建议生成)
+- ✅ 会议纪要 Agent (Minutes Agent，负责读取会议文件并输出 Markdown 纪要)
 - ✅ gRPC 通信 (RPC Server + RPC Client)
 - ✅ A2A 协议通信
 - ✅ Redis 任务状态存储
@@ -284,10 +287,10 @@ redis-cli ping  # 应返回 PONG
 
 ```bash
 # 启动多 Agent 系统（包含 MCP 工具 + RAG 智能工具选择）
-# 这将启动: Registry Server (8500) + Math Agent (5001) + General Agent (5002) + Ops Agent (5003) + Orchestrator (5000)
+# 这将启动: Registry Server (8500) + Math Agent (5001) + General Agent (5002) + Ops Agent (5003) + Minutes Agent (5004) + Orchestrator (5000)
 # 通过显式覆盖端口，使其与 RPC Server 默认连接配置保持一致
 # RAG 会自动将工具描述向量化，查询时动态检索最相关的工具
-REGISTRY_PORT=8500 ORCHESTRATOR_PORT=5000 MATH_AGENT_PORT=5001 GENERAL_AGENT_PORT=5002 OPS_AGENT_PORT=5003 \
+REGISTRY_PORT=8500 ORCHESTRATOR_PORT=5000 MATH_AGENT_PORT=5001 GENERAL_AGENT_PORT=5002 OPS_AGENT_PORT=5003 MINUTES_AGENT_PORT=5004 \
 ENABLE_MCP=true ENABLE_RAG=true ./examples/ai_orchestrator/start_system.sh
 ```
 
@@ -296,7 +299,7 @@ ENABLE_MCP=true ENABLE_RAG=true ./examples/ai_orchestrator/start_system.sh
 ==========================================
 AI Agent 系统启动
 ==========================================
-[1/5] 启动 Registry Server...
+[1/6] 启动 Registry Server...
 Registry Server 启动完成 (端口: 8500)
 MCP 已启用: /path/to/mcp_server
 MCP 插件目录: /path/to/plugins
@@ -304,13 +307,15 @@ MCP 日志目录: /path/to/logs
 RAG-MCP 已启用: 智能工具选择
   Top-K: 5
   相似度阈值: 0.3
-[2/5] 启动 Math Agent...
+[2/6] 启动 Math Agent...
 Math Agent 启动完成 (端口: 5001)
-[3/5] 启动 General Agent...
+[3/6] 启动 General Agent...
 General Agent 启动完成 (端口: 5002)
-[4/5] 启动 Ops Agent...
+[4/6] 启动 Ops Agent...
 Ops Agent 启动完成 (端口: 5003)
-[5/5] 启动 Orchestrator...
+[5/6] 启动 Minutes Agent...
+Minutes Agent 启动完成 (端口: 5004)
+[6/6] 启动 Orchestrator...
 Orchestrator 启动完成 (端口: 5000)
 
 ==========================================
@@ -373,6 +378,10 @@ AI: 可以从模板标准化、关键信息提取、任务项拆分和会后回�
 [default] > 帮我看下服务器 CPU、磁盘和网络状态
 AI: 当前服务器整体状态正常/预警...（会给出结论、证据和建议）
 
+# 会议纪要（路由到 Minutes Agent，调用文件读写工具）
+[default] > 请根据 /abs/path/to/meeting_transcript.txt 生成中文会议纪要，并保存到 /abs/path/to/meeting_minutes.md
+AI: 已根据会议文件生成 Markdown 纪要，并保存到 /abs/path/to/meeting_minutes.md ...
+
 # 查看连接状态
 [default] > /status
 连接状态: 已连接
@@ -395,6 +404,7 @@ pkill -f ai_orchestrator
 pkill -f ai_math_agent
 pkill -f ai_general_agent
 pkill -f ai_ops_agent
+pkill -f ai_minutes_agent
 pkill -f ai_registry_server
 ```
 
@@ -409,7 +419,7 @@ grep -E "MCP|RAG" build/runtime/examples/ai_orchestrator/logs/math_agent.log
 # 预期输出:
 # [MathAgent] MCP 已启用，可用工具: calculator add subtract multiply divide power sqrt factorial
 # [INFO ] RAG-MCP initialized successfully
-# [INFO ] Indexing 12 tools for RAG retrieval
+# [INFO ] Indexing ... tools for RAG retrieval
 
 # 查看 General Agent 日志（应正常启动，但不会初始化 MCP）
 grep -E "General Agent|初始化完成|已注册到服务中心" build/runtime/examples/ai_orchestrator/logs/general_agent.log
@@ -427,6 +437,15 @@ grep -E "Ops Agent|初始化完成|已注册到服务中心|get_system_overview|
 # [Ops Agent] 初始化完成
 # [Ops Agent] 启动在端口 5003
 # [Ops Agent] 已注册到服务中心
+
+# 查看 Minutes Agent 日志（应正常加载会议文件工具并注册成功）
+grep -E "Minutes Agent|初始化完成|已注册到服务中心|read_text_file|write_text_file|derive_markdown_output_path" build/runtime/examples/ai_orchestrator/logs/minutes_agent.log
+
+# 预期输出:
+# [Minutes Agent] MCP 已启用，可用工具: read_text_file write_text_file derive_markdown_output_path ...
+# [Minutes Agent] 初始化完成
+# [Minutes Agent] 启动在端口 5004
+# [Minutes Agent] 已注册到服务中心
 ```
 
 ### RAG 智能工具选择工作原理
@@ -453,7 +472,7 @@ grep -E "Ops Agent|初始化完成|已注册到服务中心|get_system_overview|
           │ Top-K 相关工具
           ▼
 ┌───────────────────┐
-│  返回相关工具      │  ← 只有 3-5 个工具，而非全部 12 个
+│  返回相关工具      │  ← 只有 3-5 个工具，而非全部可用工具
 │  - calculator     │
 │  - add            │
 │  - multiply       │
@@ -482,7 +501,7 @@ Initializing MCPAgentIntegration...
   Available: Yes
   RAG Active: Yes
 
-Available Tools (12):
+Available Tools (若干):
   - calculator: 计算数学表达式
   - add: 加法运算
   - subtract: 减法运算
@@ -561,7 +580,7 @@ cmake --build build --target ai_orchestrator -j$(nproc)
 # [INFO ] Refreshed 12 MCP tools
 # [MathAgent] MCP 已启用，可用工具: calculator add subtract multiply divide power sqrt factorial sleep ...
 # [INFO ] RAG-MCP initialized successfully
-# [INFO ] Indexing 12 tools for RAG retrieval
+# [INFO ] Indexing ... tools for RAG retrieval
 # [MathAgent] 初始化完成
 # [MathAgent] 启动在端口 5001
 # [MathAgent] 已注册到服务中心
@@ -616,10 +635,38 @@ cmake --build build --target ai_orchestrator -j$(nproc)
 # [Ops Agent] 已注册到服务中心
 ```
 
-### 步骤 6: 启动 Orchestrator（仅做路由与上下文管理）
+### 步骤 6: 启动 Minutes Agent（会议纪要生成）
 
 ```bash
-# 终端 5: Orchestrator (协调器，仅负责意图识别、上下文维护与 Agent 路由)
+# 终端 5: Minutes Agent (会议文件纪要 Agent + MCP 文件工具 + RAG 智能工具选择)
+# Agent_communication/examples/ai_orchestrator/minutes_agent_main.cpp
+./build/examples/ai_orchestrator/ai_minutes_agent \
+    minutes-1 \
+    5004 \
+    http://localhost:8500 \
+    $QWEN_API_KEY \
+    --redis-host 127.0.0.1 \
+    --redis-port 6379 \
+    --enable-mcp \
+    --mcp-server $(pwd)/build/mcp_server/mcp_server \
+    --enable-rag \
+    --rag-top-k 4 \
+    --rag-threshold 0.3
+
+# 输出:
+# [RedisTaskStore] 连接到 Redis 127.0.0.1:6379
+# [RedisTaskStore] 连接成功
+# [INFO ] MCP client connected to server: .../mcp_server
+# [Minutes Agent] MCP 已启用，可用工具: read_text_file write_text_file derive_markdown_output_path ...
+# [Minutes Agent] 初始化完成
+# [Minutes Agent] 启动在端口 5004
+# [Minutes Agent] 已注册到服务中心
+```
+
+### 步骤 7: 启动 Orchestrator（仅做路由与上下文管理）
+
+```bash
+# 终端 6: Orchestrator (协调器，仅负责意图识别、上下文维护与 Agent 路由)
 # Agent_communication/examples/ai_orchestrator/orchestrator_main.cpp
 ./build/examples/ai_orchestrator/ai_orchestrator \
     orch-1 \
@@ -637,10 +684,10 @@ cmake --build build --target ai_orchestrator -j$(nproc)
 # [Orchestrator] 已注册到服务中心
 ```
 
-### 步骤 7: 启动 RPC Server
+### 步骤 8: 启动 RPC Server
 
 ```bash
-# 终端 6: RPC Server (gRPC 服务端)
+# 终端 7: RPC Server (gRPC 服务端)
 ./build/RPC_server/rpc_server
 
 # 输出:
@@ -659,10 +706,10 @@ cmake --build build --target ai_orchestrator -j$(nproc)
 # 超时时间:       60 秒
 ```
 
-### 步骤 8: 启动 RPC Client
+### 步骤 9: 启动 RPC Client
 
 ```bash
-# 终端 7: RPC Client (用户客户端)
+# 终端 8: RPC Client (用户客户端)
 # Agent_communication/RPC_client/src/main.cpp
 ./build/RPC_client/rpc_client
 
@@ -686,7 +733,7 @@ cmake --build build --target ai_orchestrator -j$(nproc)
 # [default] >
 ```
 
-### 步骤 9: 测试完整功能
+### 步骤 10: 测试完整功能
 
 ```bash
 # 在 RPC Client 中测试
@@ -737,6 +784,12 @@ AI: 当前服务器 CPU 负载正常，磁盘空间剩余充足，网络无明�
 AI: 我先检查了整体状态和 top 进程，当前 ...
 [Agent: ops-1, 耗时: 9xxms]
 
+# === 会议纪要生成（路由到 Minutes Agent）===
+[default] > 请根据 /home/chen/Agent_communication/docs/examples/meeting_transcript_sample.txt 生成会议纪要，并保存到 /home/chen/Agent_communication/build/runtime/tests/meeting_minutes/sample_meeting_minutes.md
+思考中...
+AI: 已生成会议纪要，并保存到 /home/chen/Agent_communication/build/runtime/tests/meeting_minutes/sample_meeting_minutes.md ...
+[Agent: minutes-1, 耗时: 1xxxms]
+
 # === 查看状态 ===
 [default] > /status
 连接状态: 已连接
@@ -748,7 +801,7 @@ AI: 我先检查了整体状态和 top 进程，当前 ...
 再见!
 ```
 
-### 步骤 10: 运行 RAG-MCP 示例
+### 步骤 11: 运行 RAG-MCP 示例
 
 ```bash
 # 单独运行 RAG-MCP 智能工具选择示例
@@ -768,7 +821,7 @@ AI: 我先检查了整体状态和 top 进程，当前 ...
 #   Available: Yes
 #   RAG Active: Yes
 #
-# Available Tools (12):
+# Available Tools (若干):
 #   - progress_test: 进度测试工具
 #   - logging_test: 日志测试工具
 #   - get_weather: 获取天气信息
@@ -798,7 +851,7 @@ AI: 我先检查了整体状态和 top 进程，当前 ...
 #   - ...
 ```
 
-### 步骤 11: 停止系统
+### 步骤 12: 停止系统
 
 ```bash
 # 方式 1: 使用停止脚本
@@ -811,6 +864,7 @@ pkill -f ai_orchestrator
 pkill -f ai_math_agent
 pkill -f ai_general_agent
 pkill -f ai_ops_agent
+pkill -f ai_minutes_agent
 pkill -f ai_registry_server
 pkill -f rpc_server
 ```
@@ -847,6 +901,7 @@ gRPC 服务端和客户端，提供 AI 查询接口。
 | Math Agent | 5001 | 数学计算专业 Agent |
 | General Agent | 5002 | 通用问答 Agent，处理 general 场景且不调用工具 |
 | Ops Agent | 5003 | 运维巡检 Agent，负责 CPU、磁盘、网络、进程诊断 |
+| Minutes Agent | 5004 | 会议纪要 Agent，负责读取会议文件并输出 Markdown 纪要 |
 
 ### 3. MCP 工具
 
@@ -858,6 +913,9 @@ gRPC 服务端和客户端，提供 AI 查询接口。
 | add | 加法 | `add(1, 2)` → `3` |
 | subtract | 减法 | `subtract(5, 3)` → `2` |
 | multiply | 乘法 | `multiply(4, 5)` → `20` |
+| read_text_file | 读取会议记录等文本文件 | 读取 `/path/to/meeting.txt` |
+| write_text_file | 写入 Markdown 纪要文件 | 写入 `meeting_minutes.md` |
+| derive_markdown_output_path | 推导默认纪要输出路径 | `meeting.txt` → `meeting_minutes.md` |
 | divide | 除法 | `divide(10, 2)` → `5` |
 | power | 幂运算 | `power(2, 10)` → `1024` |
 | sqrt | 平方根 | `sqrt(16)` → `4` |
@@ -1004,7 +1062,7 @@ export DASHSCOPE_API_KEY=sk-your-dashscope-api-key
 
 | 场景 | 无 RAG | 有 RAG |
 |------|--------|--------|
-| 工具数量 | 返回全部 12 个工具 | 返回最相关的 5 个 |
+| 工具数量 | 返回全部可用工具 | 返回最相关的 5 个 |
 | LLM Token 消耗 | 高 | 低 (减少 60%+) |
 | 响应速度 | 慢 | 快 |
 | 工具选择准确性 | 可能选错 | 更精准 |
@@ -1219,7 +1277,7 @@ grep "RAG" build/runtime/examples/ai_orchestrator/logs/math_agent.log
 
 # 预期输出:
 # [INFO ] RAG-MCP initialized successfully
-# [INFO ] Indexing 12 tools for RAG retrieval
+# [INFO ] Indexing ... tools for RAG retrieval
 
 # 5. 运行 RAG 示例验证
 ./build/examples/rag_mcp_example \
