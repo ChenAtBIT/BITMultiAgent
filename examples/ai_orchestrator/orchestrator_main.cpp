@@ -624,6 +624,49 @@ private:
     }
 
     /**
+     * @brief 基于规则判断是否明显属于知识库入库或问答任务
+     * @param text 用户输入
+     * @return true 表示高概率应路由到 Knowledge Agent
+     */
+    static bool is_likely_knowledge_query(const std::string& text) {
+        if (is_likely_code_query(text) ||
+            is_likely_math_query(text) ||
+            is_likely_ops_query(text)) {
+            return false;
+        }
+
+        const std::string normalized = normalize_math_symbols(text);
+        const std::string lower_text = to_lower_copy(normalized);
+
+        const std::vector<std::string> explicit_knowledge_phrases = {
+            "知识库", "向量库", "文档问答", "资料问答", "向量化", "相似度检索",
+            "sqlite-vec", "sqlite vec", "knowledge base", "rag"
+        };
+        if (contains_any(lower_text, explicit_knowledge_phrases)) {
+            return true;
+        }
+
+        const std::vector<std::string> action_keywords = {
+            "入库", "导入", "索引", "检索", "搜索", "查询", "召回",
+            "回答", "问答", "向量化", "embedding", "embed"
+        };
+        const std::vector<std::string> document_keywords = {
+            "文档", "资料", "论文", "手册", "文件", "路径",
+            "document", "manual", "kb"
+        };
+
+        const bool has_action_keyword = contains_any(lower_text, action_keywords);
+        const bool has_document_keyword = contains_any(lower_text, document_keywords);
+        const bool has_file_hint = contains_file_path_hint(normalized);
+
+        if (has_action_keyword && (has_document_keyword || has_file_hint)) {
+            return true;
+        }
+
+        return contains_any(lower_text, {"根据知识库", "从文档中", "从资料中", "基于知识库"});
+    }
+
+    /**
      * @brief 基于规则判断是否明显属于会议纪要生成任务
      * @param text 用户输入
      * @return true 表示高概率应路由到 Minutes Agent
@@ -631,7 +674,8 @@ private:
     static bool is_likely_minutes_query(const std::string& text) {
         if (is_likely_code_query(text) ||
             is_likely_math_query(text) ||
-            is_likely_ops_query(text)) {
+            is_likely_ops_query(text) ||
+            is_likely_knowledge_query(text)) {
             return false;
         }
 
@@ -869,6 +913,9 @@ private:
                 } else if (intent == "ops") {
                     // 运维请求由 Ops Agent 负责调用观测工具并生成诊断建议。
                     response_text = call_ops_agent(user_text, context_id);
+                } else if (intent == "knowledge") {
+                    // 知识库请求由 Knowledge Agent 负责文档向量化入库与相似度检索问答。
+                    response_text = call_knowledge_agent(user_text, context_id);
                 } else if (intent == "minutes") {
                     // 会议纪要任务由 Minutes Agent 负责读取会议文件并生成 Markdown 结果。
                     response_text = call_minutes_agent(user_text, context_id);
@@ -988,6 +1035,9 @@ private:
             } else if (intent == "ops") {
                 // 运维请求由 Ops Agent 负责调用观测工具并生成诊断建议。
                 response_text = call_ops_agent(user_text, context_id);
+            } else if (intent == "knowledge") {
+                // 知识库请求由 Knowledge Agent 负责文档向量化入库与相似度检索问答。
+                response_text = call_knowledge_agent(user_text, context_id);
             } else if (intent == "minutes") {
                 // 会议纪要任务由 Minutes Agent 负责读取会议文件并生成 Markdown 结果。
                 response_text = call_minutes_agent(user_text, context_id);
@@ -1082,7 +1132,7 @@ private:
     /**
      * @brief 使用大模型做轻量意图分类
      * @param text 用户原始输入
-     * @return math、code、ops、minutes 或 general
+     * @return math、code、ops、knowledge、minutes 或 general
      *
      * 这里对模型输出做包含判断，而不是要求完全等于类别名，
      * 是为了兼容模型偶尔返回解释文本的情况。
@@ -1100,21 +1150,27 @@ private:
             return "ops";
         }
 
+        if (is_likely_knowledge_query(text)) {
+            return "knowledge";
+        }
+
         if (is_likely_minutes_query(text)) {
             return "minutes";
         }
 
         const std::string system_prompt =
             "你是 AI Orchestrator 的意图分类器。"
-            "你只能从 math、code、ops、minutes、general 五个标签中选择一个，并且只输出标签本身。\n"
+            "你只能从 math、code、ops、knowledge、minutes、general 六个标签中选择一个，并且只输出标签本身。\n"
             "分类规则：\n"
             "1. math：数学计算、表达式求值、方程、几何、概率统计、微积分，以及像“1+1”、“计算1+1”、“(3+5)*2”、“解 x^2-4=0”这类输入。\n"
             "2. code：编程、代码解释、报错排查、脚本、SQL、接口、开发工具，以及在明确编程语境中讨论表达式。\n"
             "3. ops：服务器状态巡检、CPU/磁盘/网络检查、top 进程、负载异常、服务器卡顿与运维诊断。\n"
-            "4. minutes：根据会议记录、会议转写或会议文件路径生成会议纪要、行动项总结、Markdown 纪要输出。\n"
-            "5. general：其他普通对话。\n"
+            "4. knowledge：把本地文档向量化入库、构建知识库、根据知识库或文档片段回答问题、sqlite-vec 检索。\n"
+            "5. minutes：根据会议记录、会议转写或会议文件路径生成会议纪要、行动项总结、Markdown 纪要输出。\n"
+            "6. general：其他普通对话。\n"
             "如果同时出现数学表达式和明显编程语境，例如“C++里 1+1 的结果”或“写代码计算 1+1”，优先返回 code。\n"
             "如果同时出现服务器和指标检查语义，例如“帮我看看服务器 CPU 和磁盘状态”，优先返回 ops。\n"
+            "如果出现知识库、向量化、sqlite-vec、文档入库、根据资料问答等语义，优先返回 knowledge。\n"
             "如果出现会议文件路径、会议记录/转写整理、输出 Markdown 纪要等语义，优先返回 minutes。\n"
             "输出要求：只能输出一个小写标签，不要解释，不要标点。";
 
@@ -1130,6 +1186,9 @@ private:
             }
             if (result.find("ops") != std::string::npos) {
                 return "ops";
+            }
+            if (result.find("knowledge") != std::string::npos) {
+                return "knowledge";
             }
             if (result.find("minutes") != std::string::npos) {
                 return "minutes";
@@ -1154,6 +1213,11 @@ private:
 
     std::string call_ops_agent(const std::string& query, const std::string& context_id) {
         return call_agent_by_tag("ops", query, context_id);
+    }
+
+    std::string call_knowledge_agent(const std::string& query,
+                                     const std::string& context_id) {
+        return call_agent_by_tag("knowledge", query, context_id);
     }
 
     std::string call_minutes_agent(const std::string& query,
@@ -1264,7 +1328,7 @@ private:
             {"skills", json::array({
                 {
                     {"name", "意图识别"},
-                    {"description", "识别用户意图并路由到 math、ops、minutes、general 等专业 Agent"},
+                    {"description", "识别用户意图并路由到 math、ops、knowledge、minutes、general 等专业 Agent"},
                     {"input_modes", json::array({"text"})},
                     {"output_modes", json::array({"text"})}
                 },

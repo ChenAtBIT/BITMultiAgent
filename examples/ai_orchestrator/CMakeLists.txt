@@ -159,6 +159,36 @@ target_link_libraries(ai_minutes_agent
     ${HIREDIS_LIBRARIES}
 )
 
+# Knowledge Agent 可执行文件（文档向量化入库与知识库问答）
+add_executable(ai_knowledge_agent
+    knowledge_agent_main.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../a2a/src/examples/redis_task_store.cpp
+)
+
+target_include_directories(ai_knowledge_agent PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../a2a/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../a2a/include/a2a/examples
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../a2a/third_party
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../orchestrator/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../mcp_client/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../common/include
+    ${CMAKE_BINARY_DIR}/proto
+    ${HIREDIS_INCLUDE_DIRS}
+)
+
+target_link_libraries(ai_knowledge_agent
+    a2a
+    orchestrator
+    agent_rpc_mcp
+    proto_lib
+    ${GRPC_LIBRARIES}
+    ${PROTOBUF_LIBRARIES}
+    CURL::libcurl
+    Threads::Threads
+    ${HIREDIS_LIBRARIES}
+)
+
 # Registry Server 可执行文件
 add_executable(ai_registry_server
     registry_server_main.cpp

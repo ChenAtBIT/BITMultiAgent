@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <cstring>
 #include <sstream>
+#include <cctype>
 
 /**
  * @brief 简单的 HTTP 服务器
@@ -119,6 +120,46 @@ public:
     }
 
 private:
+    /**
+     * @brief 从 HTTP 头中解析 Content-Length
+     * @param header_text 完整请求头
+     * @return 正文长度；未提供时返回 0
+     */
+    static size_t parse_content_length(const std::string& header_text) {
+        std::istringstream header_stream(header_text);
+        std::string line;
+
+        while (std::getline(header_stream, line)) {
+            if (!line.empty() && line.back() == '\r') {
+                line.pop_back();
+            }
+
+            std::string lower_line = line;
+            for (char& ch : lower_line) {
+                ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+            }
+
+            const std::string prefix = "content-length:";
+            if (lower_line.rfind(prefix, 0) != 0) {
+                continue;
+            }
+
+            std::string value_text = line.substr(prefix.size());
+            while (!value_text.empty() &&
+                   std::isspace(static_cast<unsigned char>(value_text.front()))) {
+                value_text.erase(value_text.begin());
+            }
+
+            if (value_text.empty()) {
+                return 0;
+            }
+
+            return static_cast<size_t>(std::stoull(value_text));
+        }
+
+        return 0;
+    }
+
     void close_server_socket() {
         int server_fd = server_fd_.exchange(-1);
         if (server_fd >= 0) {
@@ -128,15 +169,38 @@ private:
     }
 
     void handle_client(int client_fd) {
+        std::string request;
+        request.reserve(8192);
+
         char buffer[8192] = {0};
-        ssize_t bytes_read = read(client_fd, buffer, sizeof(buffer) - 1);
-        
-        if (bytes_read <= 0) {
-            close(client_fd);
-            return;
+        size_t header_end = std::string::npos;
+        size_t content_length = 0;
+
+        while (true) {
+            const ssize_t bytes_read = read(client_fd, buffer, sizeof(buffer));
+            if (bytes_read <= 0) {
+                close(client_fd);
+                return;
+            }
+
+            request.append(buffer, static_cast<size_t>(bytes_read));
+
+            if (header_end == std::string::npos) {
+                header_end = request.find("\r\n\r\n");
+                if (header_end != std::string::npos) {
+                    // 先完整读到请求头，再根据 Content-Length 继续接收正文。
+                    const std::string header_text = request.substr(0, header_end + 4);
+                    content_length = parse_content_length(header_text);
+                }
+            }
+
+            if (header_end != std::string::npos) {
+                const size_t body_start = header_end + 4;
+                if (request.size() >= body_start + content_length) {
+                    break;
+                }
+            }
         }
-        
-        std::string request(buffer, bytes_read);
         
         // 解析 HTTP 请求
         std::istringstream request_stream(request);
@@ -145,9 +209,9 @@ private:
         
         // 提取请求体
         std::string body;
-        size_t body_pos = request.find("\r\n\r\n");
-        if (body_pos != std::string::npos) {
-            body = request.substr(body_pos + 4);
+        if (header_end != std::string::npos) {
+            const size_t body_pos = header_end + 4;
+            body = request.substr(body_pos, content_length);
         }
         
         // 检查是否需要流式响应（通过检查请求体中的 method）

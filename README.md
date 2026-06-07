@@ -136,9 +136,9 @@ agent-communication/
 │   ┌────────────┬────────────┬────────────┬────────────┬────────────────┐   │
 │   ▼            ▼            ▼            ▼            ▼                │   │
 │ ┌─────────────┐┌─────────────┐┌─────────────┐┌─────────────┐┌──────────┐│   │
-│ │ Math Agent  ││General Agent││  Ops Agent  ││Minutes Agent││知识库Agent││   │
-│ │ 端口 5001   ││ 端口 5002   ││ 端口 5003   ││ 端口 5004   ││ (可扩展)  ││   │
-│ │ + MCP Tools ││ 无工具直答  ││ + MCP Tools ││ + MCP Tools ││ + MCP工具 ││   │
+│ │ Math Agent  ││General Agent││  Ops Agent  ││Minutes Agent││Knowledge  ││   │
+│ │ 端口 5001   ││ 端口 5002   ││ 端口 5003   ││ 端口 5004   ││Agent 5005 ││   │
+│ │ + MCP Tools ││ 无工具直答  ││ + MCP Tools ││ + MCP Tools ││+ MCP工具  ││   │
 │ └─────────────┘└─────────────┘└─────────────┘└─────────────┘└──────────┘│   │
 │                                                                            │
 │  ┌─────────────────────────────────────────────────────────────────────┐  │
@@ -151,16 +151,17 @@ agent-communication/
 ### 数据流向
 
 ```
-1. 用户输入 "1+7"、"什么是人工智能"、"帮我看下服务器 CPU 和磁盘状态" 或 "根据会议文件路径生成纪要"
+1. 用户输入 "1+7"、"什么是人工智能"、"帮我看下服务器 CPU 和磁盘状态"、"根据会议文件路径生成纪要" 或 "把文档入库后再回答问题"
 2. rpc_client → gRPC → rpc_server (端口 50051)
 3. rpc_server → A2A Adapter → Orchestrator (端口 5000)
-4. Orchestrator 识别意图为 "math" / "ops" / "minutes" / "general"
+4. Orchestrator 识别意图为 "math" / "ops" / "knowledge" / "minutes" / "general"
 5. math 请求：Orchestrator → Math Agent (端口 5001)
 6. Math Agent 调用 MCP calculator 工具并返回结果 "1+7 = 8"
 7. ops 请求：Orchestrator → Ops Agent (端口 5003)，调用 CPU/磁盘/网络/进程工具生成诊断建议
-8. minutes 请求：Orchestrator → Minutes Agent (端口 5004)，调用文件读写工具生成并保存 Markdown 纪要
-9. general 请求：Orchestrator → General Agent (端口 5002)，直接基于上下文回答
-10. 响应原路返回给用户
+8. knowledge 请求：Orchestrator → Knowledge Agent (端口 5005)，调用 sqlite-vec 知识库工具完成文档入库或相似度检索问答
+9. minutes 请求：Orchestrator → Minutes Agent (端口 5004)，调用文件读写工具生成并保存 Markdown 纪要
+10. general 请求：Orchestrator → General Agent (端口 5002)，直接基于上下文回答
+11. 响应原路返回给用户
 ```
 
 ---
@@ -191,10 +192,12 @@ sudo apt-get install -y \
     protobuf-compiler \
     protobuf-compiler-grpc \
     libcurl4-openssl-dev \
+    libsqlite3-dev \
     libjsoncpp-dev \
     uuid-dev \
     libgtest-dev \
     libhiredis-dev \
+    sqlite3 \
     redis-server \
     nlohmann-json3-dev
 ```
@@ -234,8 +237,10 @@ ls -la build/examples/ai_orchestrator/ai_math_agent
 ls -la build/examples/ai_orchestrator/ai_general_agent
 ls -la build/examples/ai_orchestrator/ai_ops_agent
 ls -la build/examples/ai_orchestrator/ai_minutes_agent
+ls -la build/examples/ai_orchestrator/ai_knowledge_agent
 ls -la build/examples/ai_orchestrator/ai_registry_server
 ls -la build/mcp_server/mcp_server
+ls -la build/mcp_server/plugins/knowledge_base_tools/libknowledge_base_tools.so
 ```
 
 ---
@@ -243,12 +248,13 @@ ls -la build/mcp_server/mcp_server
 ## 快速启动（完整功能版）
 
 本快速启动将启动项目的**所有功能**，包括：
-- ✅ 多 Agent 协作系统 (Registry + Orchestrator + Math Agent + General Agent + Ops Agent + Minutes Agent)
-- ✅ MCP 工具调用 (calculator, add, subtract, multiply, divide, power, sqrt, factorial, get_system_overview, get_cpu_snapshot, get_disk_usage, get_network_snapshot, get_top_processes, read_text_file, write_text_file, derive_markdown_output_path)
+- ✅ 多 Agent 协作系统 (Registry + Orchestrator + Math Agent + General Agent + Ops Agent + Minutes Agent + Knowledge Agent)
+- ✅ MCP 工具调用 (calculator, add, subtract, multiply, divide, power, sqrt, factorial, get_system_overview, get_cpu_snapshot, get_disk_usage, get_network_snapshot, get_top_processes, read_text_file, write_text_file, derive_markdown_output_path, ingest_knowledge_file, search_knowledge_base)
 - ✅ RAG-MCP 智能工具选择 (基于向量相似度动态检索相关工具，而非一次性提供所有工具给 LLM)
 - ✅ 通用问答 Agent (General Agent，处理 general 场景，直接回答且不调用工具)
 - ✅ 运维巡检 Agent (Ops Agent，负责 CPU、磁盘、网络、进程检查和建议生成)
 - ✅ 会议纪要 Agent (Minutes Agent，负责读取会议文件并输出 Markdown 纪要)
+- ✅ 知识库 Agent (Knowledge Agent，负责文档向量化入库与基于 sqlite-vec 的知识库问答)
 - ✅ gRPC 通信 (RPC Server + RPC Client)
 - ✅ A2A 协议通信
 - ✅ Redis 任务状态存储
@@ -271,6 +277,9 @@ export QWEN_API_KEY=sk-your-qwen-api-key
 # 必需：DashScope API Key（用于 RAG 智能工具选择）
 # RAG 会将工具描述向量化存储，查询时动态检索相关工具
 export DASHSCOPE_API_KEY=sk-your-dashscope-api-key
+
+# 可选：Knowledge Agent 默认使用的 sqlite-vec 数据库路径
+export KNOWLEDGE_BASE_DB_PATH=$(pwd)/build/runtime/examples/ai_orchestrator/knowledge_base/knowledge_base.db
 ```
 
 ### 第三步：启动 Redis
@@ -287,10 +296,10 @@ redis-cli ping  # 应返回 PONG
 
 ```bash
 # 启动多 Agent 系统（包含 MCP 工具 + RAG 智能工具选择）
-# 这将启动: Registry Server (8500) + Math Agent (5001) + General Agent (5002) + Ops Agent (5003) + Minutes Agent (5004) + Orchestrator (5000)
+# 这将启动: Registry Server (8500) + Math Agent (5001) + General Agent (5002) + Ops Agent (5003) + Minutes Agent (5004) + Knowledge Agent (5005) + Orchestrator (5000)
 # 通过显式覆盖端口，使其与 RPC Server 默认连接配置保持一致
 # RAG 会自动将工具描述向量化，查询时动态检索最相关的工具
-REGISTRY_PORT=8500 ORCHESTRATOR_PORT=5000 MATH_AGENT_PORT=5001 GENERAL_AGENT_PORT=5002 OPS_AGENT_PORT=5003 MINUTES_AGENT_PORT=5004 \
+REGISTRY_PORT=8500 ORCHESTRATOR_PORT=5000 MATH_AGENT_PORT=5001 GENERAL_AGENT_PORT=5002 OPS_AGENT_PORT=5003 MINUTES_AGENT_PORT=5004 KNOWLEDGE_AGENT_PORT=5005 \
 ENABLE_MCP=true ENABLE_RAG=true ./examples/ai_orchestrator/start_system.sh
 ```
 
@@ -299,23 +308,26 @@ ENABLE_MCP=true ENABLE_RAG=true ./examples/ai_orchestrator/start_system.sh
 ==========================================
 AI Agent 系统启动
 ==========================================
-[1/6] 启动 Registry Server...
+[1/7] 启动 Registry Server...
 Registry Server 启动完成 (端口: 8500)
 MCP 已启用: /path/to/mcp_server
 MCP 插件目录: /path/to/plugins
 MCP 日志目录: /path/to/logs
+知识库数据库路径: /path/to/knowledge_base.db
 RAG-MCP 已启用: 智能工具选择
   Top-K: 5
   相似度阈值: 0.3
-[2/6] 启动 Math Agent...
+[2/7] 启动 Math Agent...
 Math Agent 启动完成 (端口: 5001)
-[3/6] 启动 General Agent...
+[3/7] 启动 General Agent...
 General Agent 启动完成 (端口: 5002)
-[4/6] 启动 Ops Agent...
+[4/7] 启动 Ops Agent...
 Ops Agent 启动完成 (端口: 5003)
-[5/6] 启动 Minutes Agent...
+[5/7] 启动 Minutes Agent...
 Minutes Agent 启动完成 (端口: 5004)
-[6/6] 启动 Orchestrator...
+[6/7] 启动 Knowledge Agent...
+Knowledge Agent 启动完成 (端口: 5005)
+[7/7] 启动 Orchestrator...
 Orchestrator 启动完成 (端口: 5000)
 
 ==========================================
@@ -382,6 +394,13 @@ AI: 当前服务器整体状态正常/预警...（会给出结论、证据和建
 [default] > 请根据 /abs/path/to/meeting_transcript.txt 生成中文会议纪要，并保存到 /abs/path/to/meeting_minutes.md
 AI: 已根据会议文件生成 Markdown 纪要，并保存到 /abs/path/to/meeting_minutes.md ...
 
+# 知识库入库 + 问答（路由到 Knowledge Agent，调用 sqlite-vec 工具）
+[default] > 请把 /home/chen/Agent_communication/docs/examples/knowledge_base_sample.txt 向量化导入知识库
+AI: 已完成入库，collection=default，写入若干知识片段到 sqlite-vec ...
+
+[default] > 根据知识库回答：夜间增量备份任务每天几点开始？
+AI: 根据知识库检索结果，夜间增量备份任务每天 02:30 开始执行 ...
+
 # 查看连接状态
 [default] > /status
 连接状态: 已连接
@@ -405,6 +424,7 @@ pkill -f ai_math_agent
 pkill -f ai_general_agent
 pkill -f ai_ops_agent
 pkill -f ai_minutes_agent
+pkill -f ai_knowledge_agent
 pkill -f ai_registry_server
 ```
 
@@ -446,6 +466,15 @@ grep -E "Minutes Agent|初始化完成|已注册到服务中心|read_text_file|w
 # [Minutes Agent] 初始化完成
 # [Minutes Agent] 启动在端口 5004
 # [Minutes Agent] 已注册到服务中心
+
+# 查看 Knowledge Agent 日志（应正常加载 sqlite-vec 知识库工具并注册成功）
+grep -E "Knowledge Agent|初始化完成|已注册到服务中心|ingest_knowledge_file|search_knowledge_base" build/runtime/examples/ai_orchestrator/logs/knowledge_agent.log
+
+# 预期输出:
+# [Knowledge Agent] MCP 已启用，可用工具: ingest_knowledge_file search_knowledge_base ...
+# [Knowledge Agent] 初始化完成
+# [Knowledge Agent] 启动在端口 5005
+# [Knowledge Agent] 已注册到服务中心
 ```
 
 ### RAG 智能工具选择工作原理
@@ -663,10 +692,40 @@ cmake --build build --target ai_orchestrator -j$(nproc)
 # [Minutes Agent] 已注册到服务中心
 ```
 
-### 步骤 7: 启动 Orchestrator（仅做路由与上下文管理）
+### 步骤 7: 启动 Knowledge Agent（文档向量化入库与知识库问答）
 
 ```bash
-# 终端 6: Orchestrator (协调器，仅负责意图识别、上下文维护与 Agent 路由)
+# 终端 6: Knowledge Agent (知识库 Agent + sqlite-vec 文档入库/检索工具 + RAG 智能工具选择)
+# Agent_communication/examples/ai_orchestrator/knowledge_agent_main.cpp
+export KNOWLEDGE_BASE_DB_PATH=$(pwd)/build/runtime/examples/ai_orchestrator/knowledge_base/knowledge_base.db
+
+./build/examples/ai_orchestrator/ai_knowledge_agent \
+    knowledge-1 \
+    5005 \
+    http://localhost:8500 \
+    $QWEN_API_KEY \
+    --redis-host 127.0.0.1 \
+    --redis-port 6379 \
+    --enable-mcp \
+    --mcp-server $(pwd)/build/mcp_server/mcp_server \
+    --enable-rag \
+    --rag-top-k 4 \
+    --rag-threshold 0.3
+
+# 输出:
+# [RedisTaskStore] 连接到 Redis 127.0.0.1:6379
+# [RedisTaskStore] 连接成功
+# [INFO ] MCP client connected to server: .../mcp_server
+# [Knowledge Agent] MCP 已启用，可用工具: ingest_knowledge_file search_knowledge_base ...
+# [Knowledge Agent] 初始化完成
+# [Knowledge Agent] 启动在端口 5005
+# [Knowledge Agent] 已注册到服务中心
+```
+
+### 步骤 8: 启动 Orchestrator（仅做路由与上下文管理）
+
+```bash
+# 终端 7: Orchestrator (协调器，仅负责意图识别、上下文维护与 Agent 路由)
 # Agent_communication/examples/ai_orchestrator/orchestrator_main.cpp
 ./build/examples/ai_orchestrator/ai_orchestrator \
     orch-1 \
@@ -684,10 +743,10 @@ cmake --build build --target ai_orchestrator -j$(nproc)
 # [Orchestrator] 已注册到服务中心
 ```
 
-### 步骤 8: 启动 RPC Server
+### 步骤 9: 启动 RPC Server
 
 ```bash
-# 终端 7: RPC Server (gRPC 服务端)
+# 终端 8: RPC Server (gRPC 服务端)
 ./build/RPC_server/rpc_server
 
 # 输出:
@@ -706,7 +765,7 @@ cmake --build build --target ai_orchestrator -j$(nproc)
 # 超时时间:       60 秒
 ```
 
-### 步骤 9: 启动 RPC Client
+### 步骤 10: 启动 RPC Client
 
 ```bash
 # 终端 8: RPC Client (用户客户端)
@@ -733,7 +792,7 @@ cmake --build build --target ai_orchestrator -j$(nproc)
 # [default] >
 ```
 
-### 步骤 10: 测试完整功能
+### 步骤 11: 测试完整功能
 
 ```bash
 # 在 RPC Client 中测试
@@ -790,6 +849,18 @@ AI: 我先检查了整体状态和 top 进程，当前 ...
 AI: 已生成会议纪要，并保存到 /home/chen/Agent_communication/build/runtime/tests/meeting_minutes/sample_meeting_minutes.md ...
 [Agent: minutes-1, 耗时: 1xxxms]
 
+# === 知识库入库（路由到 Knowledge Agent）===
+[default] > 请把 /home/chen/Agent_communication/docs/examples/knowledge_base_sample.txt 向量化导入知识库
+思考中...
+AI: 已将文档写入 sqlite-vec 知识库，collection=default，写入若干切片 ...
+[Agent: knowledge-1, 耗时: 1xxxms]
+
+# === 知识库问答（路由到 Knowledge Agent）===
+[default] > 根据知识库回答：夜间增量备份任务每天几点开始？
+思考中...
+AI: 根据 source_path=/home/chen/Agent_communication/docs/examples/knowledge_base_sample.txt 的检索片段，夜间增量备份任务每天 02:30 开始执行。
+[Agent: knowledge-1, 耗时: 1xxxms]
+
 # === 查看状态 ===
 [default] > /status
 连接状态: 已连接
@@ -801,7 +872,7 @@ AI: 已生成会议纪要，并保存到 /home/chen/Agent_communication/build/ru
 再见!
 ```
 
-### 步骤 11: 运行 RAG-MCP 示例
+### 步骤 12: 运行 RAG-MCP 示例
 
 ```bash
 # 单独运行 RAG-MCP 智能工具选择示例
@@ -851,7 +922,7 @@ AI: 已生成会议纪要，并保存到 /home/chen/Agent_communication/build/ru
 #   - ...
 ```
 
-### 步骤 12: 停止系统
+### 步骤 13: 停止系统
 
 ```bash
 # 方式 1: 使用停止脚本
@@ -865,6 +936,7 @@ pkill -f ai_math_agent
 pkill -f ai_general_agent
 pkill -f ai_ops_agent
 pkill -f ai_minutes_agent
+pkill -f ai_knowledge_agent
 pkill -f ai_registry_server
 pkill -f rpc_server
 ```
@@ -902,6 +974,7 @@ gRPC 服务端和客户端，提供 AI 查询接口。
 | General Agent | 5002 | 通用问答 Agent，处理 general 场景且不调用工具 |
 | Ops Agent | 5003 | 运维巡检 Agent，负责 CPU、磁盘、网络、进程诊断 |
 | Minutes Agent | 5004 | 会议纪要 Agent，负责读取会议文件并输出 Markdown 纪要 |
+| Knowledge Agent | 5005 | 知识库 Agent，负责 sqlite-vec 文档入库与相似度检索问答 |
 
 ### 3. MCP 工具
 
@@ -925,6 +998,8 @@ gRPC 服务端和客户端，提供 AI 查询接口。
 | get_disk_usage | 磁盘使用情况 | 查看 `/` 或指定路径空间使用率 |
 | get_network_snapshot | 网络状态快照 | 采样吞吐、丢包和错误包 |
 | get_top_processes | Top 进程列表 | 查看最占 CPU 或内存的进程 |
+| ingest_knowledge_file | 文档切片、向量化并写入 sqlite-vec | 导入 `knowledge_base_sample.txt` |
+| search_knowledge_base | 相似度检索知识库片段 | 回答“夜间备份几点开始” |
 
 ### 4. MCP Client 传输方式
 
@@ -1081,6 +1156,8 @@ export DASHSCOPE_API_KEY=sk-your-dashscope-api-key
 | ENABLE_RAG | 否 | 是否启用 RAG 智能工具选择 (true/false，默认 false) | - |
 | RAG_TOP_K | 否 | RAG 返回工具数量 (默认: 5) | - |
 | RAG_THRESHOLD | 否 | RAG 相似度阈值 (默认: 0.3) | - |
+| KNOWLEDGE_BASE_DB_PATH | 否 | Knowledge Agent 默认使用的 sqlite-vec 数据库文件路径 | - |
+| KNOWLEDGE_BASE_EMBEDDING_MODEL | 否 | 知识库向量化模型，默认 `text-embedding-v2` | - |
 | RPC_SERVER_PORT | 否 | RPC Server 端口 (默认: 50051) | - |
 | ORCHESTRATOR_URL | 否 | Orchestrator 地址 (默认: http://localhost:5000) | - |
 
@@ -1092,6 +1169,7 @@ export ENABLE_MCP=true
 export ENABLE_RAG=true
 export RAG_TOP_K=5
 export RAG_THRESHOLD=0.3
+export KNOWLEDGE_BASE_DB_PATH=$(pwd)/build/runtime/examples/ai_orchestrator/knowledge_base/knowledge_base.db
 ```
 
 ### Agent 启动参数
@@ -1131,6 +1209,21 @@ export RAG_THRESHOLD=0.3
   --enable-rag            启用 RAG 智能工具选择
   --rag-api-key <key>     DashScope API Key (也可通过环境变量设置)
   --rag-top-k <n>         返回工具数量 (默认: 6)
+  --rag-threshold <f>     相似度阈值 (默认: 0.3)
+  --rag-model <model>     Embedding 模型 (默认: text-embedding-v2)
+
+# Knowledge Agent 参数
+./ai_knowledge_agent <agent_id> <port> <registry_url> <api_key> [选项]
+
+选项:
+  --redis-host <host>     Redis 主机 (默认: 127.0.0.1)
+  --redis-port <port>     Redis 端口 (默认: 6379)
+  --enable-mcp            启用 MCP 工具
+  --mcp-server <path>     MCP Server 路径
+  --mcp-args <args>       MCP Server 参数 (逗号分隔)
+  --enable-rag            启用 RAG 智能工具选择
+  --rag-api-key <key>     DashScope API Key (也可通过环境变量设置)
+  --rag-top-k <n>         返回工具数量 (默认: 4)
   --rag-threshold <f>     相似度阈值 (默认: 0.3)
   --rag-model <model>     Embedding 模型 (默认: text-embedding-v2)
 
