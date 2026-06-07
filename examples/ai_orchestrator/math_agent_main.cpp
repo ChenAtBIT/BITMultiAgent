@@ -41,6 +41,26 @@ std::string to_lower_copy(const std::string& text) {
  */
 bool is_math_tool_name(const std::string& tool_name) {
     const std::string lowered = to_lower_copy(tool_name);
+    // 显式覆盖 calculator 插件当前暴露的全部数学工具，避免基础算子因为命名过短被漏掉。
+    static const std::vector<std::string> exact_math_tool_names = {
+        "calculator",
+        "add",
+        "subtract",
+        "multiply",
+        "divide",
+        "power",
+        "sqrt",
+        "factorial"
+    };
+
+    // 先按精确工具名匹配，确保加减乘除等基础数学工具都能注入给 Math Agent。
+    if (std::find(exact_math_tool_names.begin(),
+                  exact_math_tool_names.end(),
+                  lowered) != exact_math_tool_names.end()) {
+        return true;
+    }
+
+    // 再保留通用关键词匹配，兼容后续新增的数学插件或更语义化的工具命名。
     return lowered.find("calc") != std::string::npos ||
            lowered.find("math") != std::string::npos ||
            lowered.find("equation") != std::string::npos ||
