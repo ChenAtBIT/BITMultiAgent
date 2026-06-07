@@ -2,18 +2,71 @@
 
 
 ## 目录
+- [BITMultiAgent](#bitmultiagent)
+  - [目录](#目录)
+  - [项目概述](#项目概述)
+    - [项目结构](#项目结构)
+    - [目录职责](#目录职责)
+    - [核心能力](#核心能力)
+    - [技术栈](#技术栈)
+  - [系统架构](#系统架构)
+    - [整体架构图](#整体架构图)
+    - [数据流向](#数据流向)
+  - [环境要求](#环境要求)
+    - [系统要求](#系统要求)
+    - [安装依赖](#安装依赖)
+    - [API Key](#api-key)
+  - [编译构建](#编译构建)
+    - [1. 编译主项目](#1-编译主项目)
+    - [2. 验证编译结果](#2-验证编译结果)
+  - [快速启动（完整功能版）](#快速启动完整功能版)
+    - [第一步：编译所有组件](#第一步编译所有组件)
+    - [第二步：设置环境变量](#第二步设置环境变量)
+    - [第三步：启动 Redis](#第三步启动-redis)
+    - [第四步：启动完整系统](#第四步启动完整系统)
+    - [第五步：启动 RPC Server](#第五步启动-rpc-server)
+    - [第六步：启动 RPC Client 并测试](#第六步启动-rpc-client-并测试)
+    - [第七步：停止系统](#第七步停止系统)
+  - [完整部署指南（手动启动各组件）](#完整部署指南手动启动各组件)
+    - [步骤 1: 准备环境](#步骤-1-准备环境)
+    - [步骤 2: 启动 Registry Server](#步骤-2-启动-registry-server)
+    - [步骤 3: 启动 Math Agent（含 MCP 工具 + RAG）](#步骤-3-启动-math-agent含-mcp-工具--rag)
+    - [步骤 4: 启动 General Agent（通用问答，不调用工具）](#步骤-4-启动-general-agent通用问答不调用工具)
+    - [步骤 5: 启动 Ops Agent（服务器巡检与故障诊断）](#步骤-5-启动-ops-agent服务器巡检与故障诊断)
+    - [步骤 6: 启动 Minutes Agent（会议纪要生成）](#步骤-6-启动-minutes-agent会议纪要生成)
+    - [步骤 7: 启动 Knowledge Agent（文档向量化入库与知识库问答）](#步骤-7-启动-knowledge-agent文档向量化入库与知识库问答)
+    - [步骤 8: 启动 Orchestrator（仅做路由与上下文管理）](#步骤-8-启动-orchestrator仅做路由与上下文管理)
+    - [步骤 9: 启动 RPC Server](#步骤-9-启动-rpc-server)
+    - [步骤 10: 启动 RPC Client](#步骤-10-启动-rpc-client)
+    - [步骤 11: 测试完整功能](#步骤-11-测试完整功能)
+    - [步骤 12: 运行 RAG-MCP 示例](#步骤-12-运行-rag-mcp-示例)
+    - [步骤 13: 停止系统](#步骤-13-停止系统)
+  - [功能模块](#功能模块)
+    - [1. RPC Server/Client](#1-rpc-serverclient)
+    - [2. Multi-Agent 系统](#2-multi-agent-系统)
+    - [3. MCP 工具](#3-mcp-工具)
+    - [4. MCP Client 传输方式](#4-mcp-client-传输方式)
+      - [STDIO 模式（默认）](#stdio-模式默认)
+      - [SSE 模式（远程部署）](#sse-模式远程部署)
+      - [SSE 配置参数](#sse-配置参数)
+      - [检查传输类型](#检查传输类型)
+    - [5. RAG-MCP (智能工具选择)](#5-rag-mcp-智能工具选择)
+      - [RAG 工作流程](#rag-工作流程)
+      - [RAG 配置参数](#rag-配置参数)
+      - [验证 MCP + RAG 是否启用](#验证-mcp--rag-是否启用)
+      - [单独运行 RAG-MCP 示例](#单独运行-rag-mcp-示例)
+      - [RAG 优势](#rag-优势)
+  - [配置说明](#配置说明)
+    - [环境变量](#环境变量)
+    - [Agent 启动参数](#agent-启动参数)
+  - [API 参考](#api-参考)
+    - [RPC Client 交互命令](#rpc-client-交互命令)
+    - [gRPC 服务接口](#grpc-服务接口)
+  - [测试](#测试)
+    - [运行所有测试](#运行所有测试)
+    - [运行特定测试](#运行特定测试)
+  - [许可证](#许可证)
 
-- [项目概述](##项目概述)
-- [系统架构](##系统架构)
-- [环境要求](##环境要求)
-- [编译构建](##编译构建)
-- [快速启动](##快速启动)
-- [完整部署指南](##完整部署指南)
-- [功能模块](##功能模块)
-- [配置说明](##配置说明)
-- [API 参考](##api-参考)
-- [测试](##测试)
-- [常见问题](##常见问题)
 
 ---
 
@@ -63,7 +116,7 @@ agent-communication/
 └── docs/                               # 文档
 ```
 
-### 对应架构层的目录职责
+### 目录职责
 
 - 应用入口层：`RPC_client/`、`RPC_server/`、`examples/`
 - 协议与适配层：`proto/`、`a2a/`、`a2a_adapter/`
@@ -439,123 +492,6 @@ pkill -f ai_ops_agent
 pkill -f ai_minutes_agent
 pkill -f ai_knowledge_agent
 pkill -f ai_registry_server
-```
-
-### 验证 MCP + RAG 是否启用
-
-查看日志确认 MCP 和 RAG 初始化成功：
-
-```bash
-# 查看 Math Agent 日志
-grep -E "MCP|RAG" build/runtime/examples/ai_orchestrator/logs/math_agent.log
-
-# 预期输出:
-# [MathAgent] MCP 已启用，可用工具: calculator add subtract multiply divide power sqrt factorial
-# [INFO ] RAG-MCP initialized successfully
-# [INFO ] Indexing ... tools for RAG retrieval
-
-# 查看 General Agent 日志（应正常启动，但不会初始化 MCP）
-grep -E "General Agent|初始化完成|已注册到服务中心" build/runtime/examples/ai_orchestrator/logs/general_agent.log
-
-# 预期输出:
-# [General Agent] 初始化完成
-# [General Agent] 启动在端口 5002
-# [General Agent] 已注册到服务中心
-
-# 查看 Ops Agent 日志（应正常加载 server_observer 工具并注册成功）
-grep -E "Ops Agent|初始化完成|已注册到服务中心|get_system_overview|get_cpu_snapshot|get_disk_usage|get_network_snapshot|get_top_processes" build/runtime/examples/ai_orchestrator/logs/ops_agent.log
-
-# 预期输出:
-# [Ops Agent] MCP 已启用，可用工具: get_system_overview get_cpu_snapshot get_disk_usage get_network_snapshot get_top_processes ...
-# [Ops Agent] 初始化完成
-# [Ops Agent] 启动在端口 5003
-# [Ops Agent] 已注册到服务中心
-
-# 查看 Minutes Agent 日志（应正常加载会议文件工具并注册成功）
-grep -E "Minutes Agent|初始化完成|已注册到服务中心|read_text_file|write_text_file|derive_markdown_output_path" build/runtime/examples/ai_orchestrator/logs/minutes_agent.log
-
-# 预期输出:
-# [Minutes Agent] MCP 已启用，可用工具: read_text_file write_text_file derive_markdown_output_path ...
-# [Minutes Agent] 初始化完成
-# [Minutes Agent] 启动在端口 5004
-# [Minutes Agent] 已注册到服务中心
-
-# 查看 Knowledge Agent 日志（应正常加载 sqlite-vec 知识库工具并注册成功）
-grep -E "Knowledge Agent|初始化完成|已注册到服务中心|ingest_knowledge_file|search_knowledge_base" build/runtime/examples/ai_orchestrator/logs/knowledge_agent.log
-
-# 预期输出:
-# [Knowledge Agent] MCP 已启用，可用工具: ingest_knowledge_file search_knowledge_base ...
-# [Knowledge Agent] 初始化完成
-# [Knowledge Agent] 启动在端口 5005
-# [Knowledge Agent] 已注册到服务中心
-```
-
-### RAG 智能工具选择工作原理
-
-当用户发送查询时，RAG-MCP 会：
-1. 将用户查询向量化（调用 DashScope Embedding API）
-2. 在工具向量索引中搜索最相似的工具
-3. 只返回 Top-K 个最相关的工具给 LLM，而非全部工具
-
-```
-用户查询 "计算 123 + 456"
-        │
-        ▼
-┌───────────────────┐
-│  EmbeddingService │  ← 调用 DashScope API 向量化
-│  (text-embedding) │
-└─────────┬─────────┘
-          │ 向量 [0.12, 0.34, ...]
-          ▼
-┌───────────────────┐
-│   VectorIndex     │  ← 余弦相似度搜索
-│   (工具向量库)     │
-└─────────┬─────────┘
-          │ Top-K 相关工具
-          ▼
-┌───────────────────┐
-│  返回相关工具      │  ← 只有 3-5 个工具，而非全部可用工具
-│  - calculator     │
-│  - add            │
-│  - multiply       │
-└───────────────────┘
-```
-
-### 单独运行 RAG-MCP 示例
-
-```bash
-# 运行 RAG-MCP 示例程序，验证智能工具选择
-./build/examples/rag_mcp_example \
-    --mcp-server ./build/mcp_server/mcp_server \
-    --enable-rag \
-    --top-k 5 \
-    --threshold 0.3
-```
-
-RAG 示例输出：
-```
-=== RAG-MCP Framework Example ===
-
-Initializing MCPAgentIntegration...
-  MCP Enabled: Yes
-  RAG Enabled: Yes
-  Initialized: Yes
-  Available: Yes
-  RAG Active: Yes
-
-Available Tools (若干):
-  - calculator: 计算数学表达式
-  - add: 加法运算
-  - subtract: 减法运算
-  ...
-
-=== Intelligent Tool Selection Demo ===
-
-Query: "计算 123 + 456 的结果"
-Relevant Tools (3):
-  - calculator (相关度: 0.89)
-  - add (相关度: 0.76)
-  - subtract (相关度: 0.45)
 ```
 
 ---
@@ -1132,18 +1068,90 @@ if (client.getTransportType() == MCPTransportType::SSE) {
 | enable_cache | true | 启用向量缓存 |
 | cache_max_size | 1000 | 缓存最大条目 |
 
-#### 运行 RAG 示例
+#### 验证 MCP + RAG 是否启用
+
+查看日志确认 MCP 和 RAG 初始化成功：
 
 ```bash
-# 设置 API Key
-export DASHSCOPE_API_KEY=sk-your-dashscope-api-key
+# 查看 Math Agent 日志
+grep -E "MCP|RAG" build/runtime/examples/ai_orchestrator/logs/math_agent.log
 
-# 运行 RAG 示例
+# 预期输出:
+# [MathAgent] MCP 已启用，可用工具: calculator add subtract multiply divide power sqrt factorial
+# [INFO ] RAG-MCP initialized successfully
+# [INFO ] Indexing ... tools for RAG retrieval
+
+# 查看 General Agent 日志（应正常启动，但不会初始化 MCP）
+grep -E "General Agent|初始化完成|已注册到服务中心" build/runtime/examples/ai_orchestrator/logs/general_agent.log
+
+# 预期输出:
+# [General Agent] 初始化完成
+# [General Agent] 启动在端口 5002
+# [General Agent] 已注册到服务中心
+
+# 查看 Ops Agent 日志（应正常加载 server_observer 工具并注册成功）
+grep -E "Ops Agent|初始化完成|已注册到服务中心|get_system_overview|get_cpu_snapshot|get_disk_usage|get_network_snapshot|get_top_processes" build/runtime/examples/ai_orchestrator/logs/ops_agent.log
+
+# 预期输出:
+# [Ops Agent] MCP 已启用，可用工具: get_system_overview get_cpu_snapshot get_disk_usage get_network_snapshot get_top_processes ...
+# [Ops Agent] 初始化完成
+# [Ops Agent] 启动在端口 5003
+# [Ops Agent] 已注册到服务中心
+
+# 查看 Minutes Agent 日志（应正常加载会议文件工具并注册成功）
+grep -E "Minutes Agent|初始化完成|已注册到服务中心|read_text_file|write_text_file|derive_markdown_output_path" build/runtime/examples/ai_orchestrator/logs/minutes_agent.log
+
+# 预期输出:
+# [Minutes Agent] MCP 已启用，可用工具: read_text_file write_text_file derive_markdown_output_path ...
+# [Minutes Agent] 初始化完成
+# [Minutes Agent] 启动在端口 5004
+# [Minutes Agent] 已注册到服务中心
+
+# 查看 Knowledge Agent 日志（应正常加载 sqlite-vec 知识库工具并注册成功）
+grep -E "Knowledge Agent|初始化完成|已注册到服务中心|ingest_knowledge_file|search_knowledge_base" build/runtime/examples/ai_orchestrator/logs/knowledge_agent.log
+
+# 预期输出:
+# [Knowledge Agent] MCP 已启用，可用工具: ingest_knowledge_file search_knowledge_base ...
+# [Knowledge Agent] 初始化完成
+# [Knowledge Agent] 启动在端口 5005
+# [Knowledge Agent] 已注册到服务中心
+```
+
+#### 单独运行 RAG-MCP 示例
+
+```bash
+# 运行 RAG-MCP 示例程序，验证智能工具选择
 ./build/examples/rag_mcp_example \
     --mcp-server ./build/mcp_server/mcp_server \
     --enable-rag \
     --top-k 5 \
     --threshold 0.3
+```
+
+RAG 示例输出：
+```
+=== RAG-MCP Framework Example ===
+
+Initializing MCPAgentIntegration...
+  MCP Enabled: Yes
+  RAG Enabled: Yes
+  Initialized: Yes
+  Available: Yes
+  RAG Active: Yes
+
+Available Tools (若干):
+  - calculator: 计算数学表达式
+  - add: 加法运算
+  - subtract: 减法运算
+  ...
+
+=== Intelligent Tool Selection Demo ===
+
+Query: "计算 123 + 456 的结果"
+Relevant Tools (3):
+  - calculator (相关度: 0.89)
+  - add (相关度: 0.76)
+  - subtract (相关度: 0.45)
 ```
 
 #### RAG 优势
@@ -1309,7 +1317,7 @@ ctest --output-on-failure
 
 ---
 
-## 常见问题
+<!-- ## 常见问题
 
 ### Q: 启动时报错 "找不到可执行文件"
 
@@ -1434,7 +1442,7 @@ tail -f build/runtime/examples/ai_orchestrator/logs/math_agent.log
 - 将 `common/`、`a2a/`、`a2a_adapter/`、`mcp_client/`、`orchestrator/` 归并为 `modules/`
 - 将 `mcp_server/` 单独提升为 `tools/mcp_server/`
 
-这一步会牵涉较多 include 路径、CMake 和文档引用，功能稳定后再做。
+这一步会牵涉较多 include 路径、CMake 和文档引用，功能稳定后再做。 -->
 
 
 ---
