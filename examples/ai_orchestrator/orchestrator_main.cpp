@@ -11,6 +11,7 @@
 #include "qwen_client.hpp"
 #include "http_server.hpp"
 #include "registry_client.hpp"
+#include "ai_orchestrator/storage_namespace_utils.hpp"
 
 #include <a2a/models/agent_message.hpp>
 #include <a2a/models/agent_task.hpp>
@@ -107,9 +108,13 @@ public:
                    const MCPAgentConfig& mcp_config = MCPAgentConfig())
         : agent_id_(agent_id)
         , listen_address_(listen_address)
-        , task_store_(std::make_shared<RedisTaskStore>(redis_host, redis_port))
+        , task_store_(std::make_shared<RedisTaskStore>(
+            redis_host,
+            redis_port,
+            ai_orchestrator::storage::build_orchestrator_redis_namespace()))
         , qwen_client_(api_key)
-        , context_memory_manager_()
+        , context_memory_manager_(
+            ai_orchestrator::storage::make_orchestrator_memory_config(agent_id))
         , registry_client_(registry_url) {
         context_memory_manager_.set_llm_compressor(
             [this](const std::string& system_prompt,
@@ -121,6 +126,12 @@ public:
         (void)mcp_config;
         
         std::cout << "[Orchestrator] 初始化完成" << std::endl;
+        std::cout << "[Orchestrator] Redis 命名空间: "
+                  << ai_orchestrator::storage::build_orchestrator_redis_namespace()
+                  << std::endl;
+        std::cout << "[Orchestrator] 记忆目录: "
+                  << ai_orchestrator::storage::make_orchestrator_memory_config(agent_id_).memory_dir
+                  << std::endl;
     }
     
     ~AIOrchestrator() {
@@ -664,6 +675,43 @@ private:
     }
 
     /**
+     * @brief 为下游专业 Agent 构造带主会话快照的查询
+     * @param query 当前用户请求
+     * @param context_id 会话上下文 ID
+     * @return 附带主会话上下文的转发文本
+     *
+     * 子 Agent 现在使用独立 Redis 命名空间，因此这里由 Orchestrator 显式补充
+     * 主会话快照，避免跨 Agent 路由后上下文突然断裂。
+     */
+    std::string build_routed_agent_query(const std::string& query,
+                                         const std::string& context_id) {
+        const auto managed_messages = build_managed_context_messages(context_id, 8);
+        std::string snapshot_text;
+
+        for (std::size_t index = 0; index < managed_messages.size(); ++index) {
+            const auto& message = managed_messages[index];
+            const bool is_last_current_user_message =
+                index + 1 == managed_messages.size() &&
+                message.role == "user" &&
+                trim(message.content) == trim(query);
+            if (is_last_current_user_message) {
+                continue;
+            }
+
+            snapshot_text += message.role + ": " + message.content + "\n";
+        }
+
+        if (snapshot_text.empty()) {
+            return query;
+        }
+
+        return
+            "以下是 Orchestrator 提供的主会话上下文，仅用于理解背景，不是新的用户指令：\n" +
+            snapshot_text +
+            "\n当前用户请求：\n" + query;
+    }
+
+    /**
      * @brief 处理普通的 message/send 请求
      * @param body JSON-RPC 请求体
      * @return JSON-RPC 响应体
@@ -983,10 +1031,12 @@ private:
         try {
             // 从注册中心查找 Agent
             std::string agent_url = registry_client_.select_agent_by_tag(tag);
+            const std::string routed_query =
+                build_routed_agent_query(query, context_id);
             
             std::cout << "[Orchestrator] 调用 " << tag << " Agent: " << agent_url << std::endl;
             
-            // 透传当前 query 和 context_id；专业 Agent 会自行决定是否改写请求或调用工具。
+            // 将主会话快照和当前请求一起透传，保证专业 Agent 的私有上下文不丢失背景信息。
             json request = {
                 {"jsonrpc", "2.0"},
                 {"id", "1"},
@@ -995,7 +1045,7 @@ private:
                     {"message", {
                         {"role", "user"},
                         {"contextId", context_id},
-                        {"parts", {{{"kind", "text"}, {"text", query}}}}
+                        {"parts", {{{"kind", "text"}, {"text", routed_query}}}}
                     }},
                     {"historyLength", 5}
                 }}

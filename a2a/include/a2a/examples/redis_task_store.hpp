@@ -22,8 +22,11 @@ public:
      * @brief Construct with Redis connection parameters
      * @param host Redis host (default: localhost)
      * @param port Redis port (default: 6379)
+     * @param key_namespace Redis 键命名空间，默认兼容旧版 a2a:task / a2a:history
      */
-    explicit RedisTaskStore(const std::string& host = "127.0.0.1", int port = 6379);
+    explicit RedisTaskStore(const std::string& host = "127.0.0.1",
+                            int port = 6379,
+                            std::string key_namespace = "a2a");
     
     ~RedisTaskStore();
     
@@ -50,19 +53,25 @@ public:
 
 private:
     /**
+     * @brief 规范化命名空间，避免出现尾部多余分隔符
+     */
+    static std::string normalize_key_namespace(std::string key_namespace);
+
+    /**
+     * @brief 规范化键组件，避免不同层级直接拼接原始上下文
+     */
+    static std::string sanitize_key_component(const std::string& raw_value);
+
+    /**
      * @brief Get Redis key for task
      */
-    std::string task_key(const std::string& task_id) const {
-        return "a2a:task:" + task_id;
-    }
-    
+    std::string task_key(const std::string& task_id) const;
+
     /**
      * @brief Get Redis key for history
      */
-    std::string history_key(const std::string& context_id) const {
-        return "a2a:history:" + context_id;
-    }
-    
+    std::string history_key(const std::string& context_id) const;
+
     /**
      * @brief Execute Redis command and check for errors
      */
@@ -76,6 +85,7 @@ private:
     redisContext* context_;
     std::string host_;
     int port_;
+    std::string key_namespace_;
     mutable std::mutex mutex_;
 };
 

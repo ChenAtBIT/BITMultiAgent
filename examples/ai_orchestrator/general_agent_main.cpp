@@ -42,7 +42,9 @@ public:
             redis_host,
             redis_port,
             MCPAgentConfig(),
-            {"general", "chat", "orchestrator-child"}
+            {"general", "chat", "orchestrator-child"},
+            "",
+            ""
         }) {}
 
 protected:

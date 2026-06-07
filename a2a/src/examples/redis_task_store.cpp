@@ -1,18 +1,27 @@
 #include "redis_task_store.hpp"
+
+#include <algorithm>
+#include <cctype>
+#include <functional>
 #include <iostream>
 #include <cstdarg>
 #include <nlohmann/json.hpp>
+#include <sstream>
+#include <utility>
 
 using json = nlohmann::json;
 
 namespace a2a {
 
-RedisTaskStore::RedisTaskStore(const std::string& host, int port)
+RedisTaskStore::RedisTaskStore(const std::string& host,
+                               int port,
+                               std::string key_namespace)
     : context_(nullptr)
     , host_(host)
-    , port_(port) {
-    
+    , port_(port)
+    , key_namespace_(normalize_key_namespace(std::move(key_namespace))) {
     std::cout << "[RedisTaskStore] 连接到 Redis " << host << ":" << port << std::endl;
+    std::cout << "[RedisTaskStore] 使用命名空间: " << key_namespace_ << std::endl;
     
     context_ = redisConnect(host.c_str(), port);
     
@@ -34,6 +43,75 @@ RedisTaskStore::~RedisTaskStore() {
         redisFree(context_);
         std::cout << "[RedisTaskStore] 断开连接" << std::endl;
     }
+}
+
+std::string RedisTaskStore::normalize_key_namespace(std::string key_namespace) {
+    if (key_namespace.empty()) {
+        return "a2a";
+    }
+
+    // 去掉尾部多余的冒号，避免后续拼接产生双分隔符。
+    while (!key_namespace.empty() && key_namespace.back() == ':') {
+        key_namespace.pop_back();
+    }
+
+    return key_namespace.empty() ? "a2a" : key_namespace;
+}
+
+std::string RedisTaskStore::sanitize_key_component(const std::string& raw_value) {
+    std::string sanitized;
+    sanitized.reserve(raw_value.size());
+
+    bool changed = false;
+    for (unsigned char ch : raw_value) {
+        if (std::isalnum(ch) || ch == '-' || ch == '_') {
+            sanitized.push_back(static_cast<char>(ch));
+            continue;
+        }
+
+        // 将分隔符和空白统一替换为下划线，避免命名空间层级被原始值打断。
+        sanitized.push_back('_');
+        changed = true;
+    }
+
+    if (sanitized.empty()) {
+        sanitized = "default";
+        changed = true;
+    }
+
+    const auto hash_value = static_cast<unsigned long long>(
+        std::hash<std::string>{}(raw_value));
+    std::ostringstream suffix_builder;
+    suffix_builder << std::hex << hash_value;
+    const std::string hash_suffix = suffix_builder.str();
+    std::string suffix;
+
+    if (changed) {
+        // 当原始值被替换过时追加短哈希，避免 lab/user 与 lab_user 撞键。
+        suffix = "_h" + hash_suffix.substr(0, std::min<std::size_t>(8, hash_suffix.size()));
+    }
+
+    constexpr std::size_t kMaxComponentLength = 96;
+    if (sanitized.size() > kMaxComponentLength && suffix.empty()) {
+        // 对超长但未替换过的 key 也追加短哈希，避免截断后撞键。
+        suffix = "_h" + hash_suffix.substr(0, std::min<std::size_t>(8, hash_suffix.size()));
+    }
+
+    if (sanitized.size() + suffix.size() > kMaxComponentLength) {
+        const std::size_t keep_length =
+            kMaxComponentLength > suffix.size() ? kMaxComponentLength - suffix.size() : 0;
+        sanitized = sanitized.substr(0, keep_length);
+    }
+
+    return sanitized + suffix;
+}
+
+std::string RedisTaskStore::task_key(const std::string& task_id) const {
+    return key_namespace_ + ":task:" + sanitize_key_component(task_id);
+}
+
+std::string RedisTaskStore::history_key(const std::string& context_id) const {
+    return key_namespace_ + ":history:" + sanitize_key_component(context_id);
 }
 
 void RedisTaskStore::ensure_connection() {
@@ -176,19 +254,22 @@ void RedisTaskStore::add_history_message(const std::string& task_id,
                                         const AgentMessage& message) {
     try {
         std::string json_str = message.to_json();
+        // 提前计算历史消息实际写入的 Redis 键名，便于命令复用和日志排查。
+        const std::string history_redis_key = history_key(task_id);
         
         // 使用 Redis List 存储历史消息
         auto reply = execute_command("RPUSH %s %s",
-                                    history_key(task_id).c_str(),
+                                    history_redis_key.c_str(),
                                     json_str.c_str());
         freeReplyObject(reply);
         
         std::cout << "[RedisTaskStore] 添加历史消息到: " << task_id 
+                  << " (键名: " << history_redis_key << ")"
                   << " (角色: " << (message.role() == MessageRole::User ? "User" : "Agent") << ")"
                   << std::endl;
         
         // 可选：限制历史长度（保留最近 1000 条）
-        reply = execute_command("LTRIM %s -1000 -1", history_key(task_id).c_str());
+        reply = execute_command("LTRIM %s -1000 -1", history_redis_key.c_str());
         freeReplyObject(reply);
         
     } catch (const std::exception& e) {

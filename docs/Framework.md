@@ -603,20 +603,33 @@ Orchestrator 在调用子 Agent 时会构造 json-rpc 格式请求，通过 HTTP
 
 ## 数据层：Redis 存储
 ### 键与值
-两类键：
+使用一个 Redis 实例，按运行时主体拆分命名空间，避免 Orchestrator 和子 Agent 共享同一条历史链路。
+
+运行时会写入两类键：
 ```json
-// 实现代码中 id = contextId，为客户端登入的 contextId
-a2a:task:<id>            // string，值是 AgentTask 的 JSON
-a2a:history:<contextId>  // list，列表元素是 AgentMessage 的 JSON
+// Orchestrator 全局会话上下文
+a2a:v2:orch:task:<sanitizedContextId>            // string，值是 AgentTask 的 JSON
+a2a:v2:orch:history:<sanitizedContextId>         // list，列表元素是 AgentMessage 的 JSON
+
+// 子 Agent 私有工作上下文（以 math-1 为例）
+a2a:v2:agent:math-1:task:<sanitizedContextId>    // string，值是 AgentTask 的 JSON
+a2a:v2:agent:math-1:history:<sanitizedContextId> // list，列表元素是 AgentMessage 的 JSON
 ```
 
-- a2a:task:<id> 是任务/会话的元信息。它主要用来存这个会话是否存在、当前状态是什么，比如 running，以后也可以挂 artifacts、metadata 这类附加信息。代码里它是 Redis string。
-- a2a:history:<contextId> 是这次会话的聊天历史。
-它按时间顺序把 user/agent 消息一条条 RPUSH 进去，模型下次回答前再 LRANGE 取最近几条拼上下文，所以它本质上是“多轮对话记忆”。代码里它是 Redis list。
+- `a2a:v2:orch:*` 是 Orchestrator 的全局上下文命名空间，只保存面向用户主会话可见的输入与最终回复。
+- `a2a:v2:agent:<agentId>:*` 是某个子 Agent 的私有命名空间，只保存该 Agent 自己的工作历史和回复，不再与 Orchestrator 共享同一条 `history`。
+- `task` 键是任务/会话的元信息。它主要用来存这个会话是否存在、当前状态是什么，比如 `running`，以后也可以挂 `artifacts`、`metadata` 这类附加信息。代码里它是 Redis string。
+- `history` 键是当前运行时主体下的聊天历史。它按时间顺序把 `user/agent` 消息一条条 `RPUSH` 进去，模型下次回答前再 `LRANGE` 取最近几条拼上下文，所以它本质上是“多轮对话记忆”。代码里它是 Redis list。
+
+键组件规范：
+
+- `context_id` 不再直接裸拼到 Redis key 中，而是先规范化成 `sanitizedContextId`。
+- 规范化规则与文件记忆一致：字母、数字、`-`、`_` 保留，其余字符替换为 `_`。
+- 如果原始值发生替换，运行时会额外追加短哈希后缀，避免 `lab/user` 与 `lab_user` 发生键冲突。
 
 对应值：
 ```json
-// a2a:task:<id>
+// a2a:v2:orch:task:<sanitizedContextId>
 {
   "id": "<id>",
   "contextId": "<contextId>",
@@ -630,7 +643,7 @@ a2a:history:<contextId>  // list，列表元素是 AgentMessage 的 JSON
   "metadata": { ... }
 }
 
-// a2a:history:<contextId> 里的每个元素
+// a2a:v2:orch:history:<sanitizedContextId> 里的每个元素
 {
   "messageId": "msg-xxx",
   "role": "user|agent|system",
@@ -650,7 +663,7 @@ a2a:history:<contextId>  // list，列表元素是 AgentMessage 的 JSON
 
 它的目标是：
 
-1. 以 `context_id` 隔离长期记忆，用户登录或客户端切换上下文后使用独立记忆文件。
+1. 以“运行时主体目录 + context_id”的方式隔离长期记忆，避免 Orchestrator 与子 Agent 互相覆盖摘要和长期记忆。
 2. 将对话历史分成工作记忆、短期摘要和长期核心记忆三层，避免把所有历史直接塞进 prompt。
 3. 使用 LLM 做摘要压缩和长期记忆提取，而不是简单截断或规则抽取。
 4. 从短期记忆中重点提取科研人的研究方向、技术偏好、协作偏好、项目背景、稳定决策和长期约束。
@@ -664,6 +677,7 @@ a2a:history:<contextId>  // list，列表元素是 AgentMessage 的 JSON
 |---|---|
 | `orchestrator/include/agent_rpc/orchestrator/context_memory_manager.h` | 定义分层记忆数据结构、配置和管理器接口 |
 | `orchestrator/src/context_memory_manager.cpp` | 实现摘要压缩、长期记忆提取、文件持久化和上下文构造 |
+| `examples/ai_orchestrator/include/ai_orchestrator/storage_namespace_utils.hpp` | 统一生成 Orchestrator / 子 Agent 的 Redis 命名空间和记忆目录 |
 | `examples/ai_orchestrator/orchestrator_main.cpp` | Orchestrator 接入分层记忆，并恢复用户消息和回复保存 |
 | `examples/ai_orchestrator/include/ai_orchestrator/react_agent_template.hpp` | Math Agent 等 ReAct 专业 Agent 复用同一套记忆管理逻辑 |
 | `tests/test_context_memory_manager.cpp` | 覆盖文件隔离、LLM 失败、压缩游标和上下文构造 |
@@ -710,7 +724,7 @@ using LlmCompressor = std::function<std::string(
 
 | 层级 | 来源 | 作用 | 存储方式 |
 |---|---|---|---|
-| 工作记忆 | Redis 中最近原始消息 | 保留当前任务的连续对话细节 | 运行时从 `a2a:history:<contextId>` 读取 |
+| 工作记忆 | Redis 中最近原始消息 | 保留当前任务的连续对话细节 | Orchestrator 从 `a2a:v2:orch:history:<sanitizedContextId>` 读取；子 Agent 从各自的 `a2a:v2:agent:<agentId>:history:<sanitizedContextId>` 读取 |
 | 短期摘要 | LLM 压缩较早历史 | 保存本轮会话内已经不适合全文注入的信息 | `short_term_summary` 写入 JSON 文件 |
 | 长期记忆 | LLM 从短期摘要提取 | 跨会话保留稳定信息，例如研究方向和偏好 | `long_term_memories` 写入 JSON 文件 |
 
@@ -739,11 +753,14 @@ user: 当前用户输入
        -> 判断是否超过工作窗口
        -> LLM 压缩较早历史为 short_term_summary
        -> LLM 从短期摘要提取 long_term_memories
-       -> 按 context_id 写入长期记忆文件
+       -> 按“运行时主体目录 + context_id”写入长期记忆文件
   -> build_context_messages()
        -> 读取长期记忆
        -> 注入短期摘要
        -> 追加最近工作记忆
+  -> 如果需要路由到专业 Agent
+       -> Orchestrator 构造“主会话上下文快照 + 当前用户请求”
+       -> 通过 A2A message/send 转发给目标 Agent
   -> 调用 LLM 或工具调用回环
   -> save_message(context_id, assistant_message)
   -> 再次刷新记忆
@@ -753,13 +770,20 @@ user: 当前用户输入
 
 ### 长期记忆文件
 
-长期记忆以 `context_id` 命名文件，默认目录：
+长期记忆按“运行时主体目录 + context_id”落盘，默认目录：
 
 ```text
-build/runtime/context_memory/<sanitized_context_id>.json
+build/runtime/context_memory/orchestrator/<sanitized_agent_id>/<sanitized_context_id>.json
+build/runtime/context_memory/agents/<sanitized_agent_id>/<sanitized_context_id>.json
 ```
 
-`context_id` 会先做路径安全清理：
+其中：
+
+- `orchestrator/<sanitized_agent_id>` 对应编排器自己的长期记忆目录。
+- `agents/<sanitized_agent_id>` 对应某个子 Agent 的私有长期记忆目录。
+- 同一个 `context_id` 在不同运行时主体下会生成不同文件，不再共享同一份摘要。
+
+`context_id` 和 `agent_id` 都会先做路径安全清理：
 
 - 字母、数字、`-`、`_` 保留。
 - 其他字符替换为 `_`。
@@ -790,7 +814,7 @@ build/runtime/context_memory/<sanitized_context_id>.json
 }
 ```
 
-`consolidated_message_count` 表示已有多少条 Redis 历史被压缩进短期摘要。构造上下文时，这些已压缩旧消息不会再重复进入工作记忆。
+`consolidated_message_count` 表示当前运行时主体下，已有多少条 Redis 历史被压缩进短期摘要。构造上下文时，这些已压缩旧消息不会再重复进入工作记忆。
 
 ### LLM 摘要与长期提取
 

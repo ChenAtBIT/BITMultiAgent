@@ -80,7 +80,9 @@ public:
             redis_host,
             redis_port,
             mcp_config,
-            {"math", "calculator", "react-agent"}
+            {"math", "calculator", "react-agent"},
+            "",
+            ""
         }) {}
 
 protected:

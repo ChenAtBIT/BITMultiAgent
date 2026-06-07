@@ -4,6 +4,7 @@
 #include "qwen_client.hpp"
 #include "redis_task_store.hpp"
 #include "registry_client.hpp"
+#include "ai_orchestrator/storage_namespace_utils.hpp"
 
 #include <a2a/core/error_code.hpp>
 #include <a2a/core/jsonrpc_request.hpp>
@@ -43,6 +44,8 @@ struct AgentRuntimeConfig {
     int redis_port = 6379;
     agent_rpc::mcp::MCPAgentConfig mcp_config;
     std::vector<std::string> registration_tags;
+    std::string redis_namespace;
+    std::string context_memory_dir;
 };
 
 /**
@@ -88,9 +91,14 @@ class A2AAgentRuntime {
 public:
     explicit A2AAgentRuntime(const AgentRuntimeConfig& config)
         : config_(config)
-        , task_store_(std::make_shared<a2a::RedisTaskStore>(config.redis_host, config.redis_port))
+        , task_store_(std::make_shared<a2a::RedisTaskStore>(
+            config.redis_host,
+            config.redis_port,
+            config.redis_namespace.empty()
+                ? ai_orchestrator::storage::build_agent_redis_namespace(config.agent_id)
+                : config.redis_namespace))
         , qwen_client_(config.api_key)
-        , context_memory_manager_()
+        , context_memory_manager_(resolve_context_memory_config(config))
         , registry_client_(config.registry_url)
         , mcp_integration_(std::make_unique<agent_rpc::mcp::MCPAgentIntegration>()) {
         context_memory_manager_.set_llm_compressor(
@@ -111,6 +119,14 @@ public:
         }
 
         std::cout << log_prefix() << " 初始化完成" << std::endl;
+        std::cout << log_prefix() << " Redis 命名空间: "
+                  << (config_.redis_namespace.empty()
+                          ? ai_orchestrator::storage::build_agent_redis_namespace(config_.agent_id)
+                          : config_.redis_namespace)
+                  << std::endl;
+        std::cout << log_prefix() << " 记忆目录: "
+                  << resolve_context_memory_config(config_).memory_dir
+                  << std::endl;
     }
 
     virtual ~A2AAgentRuntime() {
@@ -284,6 +300,23 @@ protected:
     }
 
 private:
+    /**
+     * @brief 解析 Agent 的上下文记忆配置
+     * @param config 运行时配置
+     * @return 已带独立目录的记忆配置
+     */
+    static agent_rpc::orchestrator::ContextMemoryConfig
+    resolve_context_memory_config(const AgentRuntimeConfig& config) {
+        if (!config.context_memory_dir.empty()) {
+            auto memory_config = ai_orchestrator::storage::make_agent_memory_config(
+                config.agent_id);
+            memory_config.memory_dir = config.context_memory_dir;
+            return memory_config;
+        }
+
+        return ai_orchestrator::storage::make_agent_memory_config(config.agent_id);
+    }
+
     /**
      * @brief 将 A2A 消息转换为记忆管理器消息
      * @param message A2A 消息
