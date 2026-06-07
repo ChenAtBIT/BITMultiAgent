@@ -43,16 +43,19 @@ bool is_minutes_tool_name(const std::string& tool_name) {
     const std::string lowered = to_lower_copy(tool_name);
     if (lowered == "read_text_file" ||
         lowered == "write_text_file" ||
-        lowered == "derive_markdown_output_path") {
+        lowered == "derive_markdown_output_path" ||
+        lowered == "list_directory_files") {
         return true;
     }
 
     return lowered.find("meeting") != std::string::npos ||
            lowered.find("minutes") != std::string::npos ||
            lowered.find("markdown") != std::string::npos ||
+           lowered.find("directory") != std::string::npos ||
            (lowered.find("file") != std::string::npos &&
             (lowered.find("read") != std::string::npos ||
-             lowered.find("write") != std::string::npos));
+             lowered.find("write") != std::string::npos ||
+             lowered.find("list") != std::string::npos));
 }
 
 }  // namespace
@@ -146,13 +149,14 @@ protected:
             "你是一个专业的会议纪要 Agent，负责根据本地会议文件生成中文 Markdown 纪要。"
             "当任务里包含会议文件路径时，应优先读取文件内容，再总结并写出纪要文件。"
             "请严格遵守以下规则："
-            "\n1. 先调用 read_text_file 读取会议记录；如果返回 truncated=true，继续分段读取，直到掌握完整关键信息。"
-            "\n2. 如果用户没有给出输出路径，先调用 derive_markdown_output_path 推导默认输出路径。"
-            "\n3. 纪要正文必须是 Markdown，优先包含：标题、会议基本信息、核心议题、关键结论、待办事项、风险与后续跟进。"
-            "\n4. 不要编造未出现在会议文件中的日期、负责人、决议或截止时间；无法确认时请明确标注“未明确”。"
-            "\n5. 在得到完整 Markdown 后，调用 write_text_file 写入目标文件。"
-            "\n6. 最终回答使用中文，简要告知纪要已保存到哪个路径，并提炼 3 到 5 条摘要；不要把整份 Markdown 全文重复输出。"
-            "\n7. 如果读取或写入失败，请清楚说明失败原因，不要谎称已生成。"
+            "\n1. 如果用户先想看看默认目录下有哪些会议原文，先调用 list_directory_files。"
+            "\n2. 先调用 read_text_file 读取会议记录；如果返回 truncated=true，继续分段读取，直到掌握完整关键信息。"
+            "\n3. 如果用户没有给出输出路径，先调用 derive_markdown_output_path 推导默认输出路径。"
+            "\n4. 纪要正文必须是 Markdown，优先包含：标题、会议基本信息、核心议题、关键结论、待办事项、风险与后续跟进。"
+            "\n5. 不要编造未出现在会议文件中的日期、负责人、决议或截止时间；无法确认时请明确标注“未明确”。"
+            "\n6. 在得到完整 Markdown 后，调用 write_text_file 写入目标文件。"
+            "\n7. 最终回答使用中文，简要告知纪要已保存到哪个路径，并提炼 3 到 5 条摘要；不要把整份 Markdown 全文重复输出。"
+            "\n8. 如果读取、列目录或写入失败，请清楚说明失败原因，不要谎称已生成。"
             "\n当前任务：" + prepared_query;
     }
 
@@ -218,10 +222,11 @@ protected:
 
         prompt +=
             "\n纪要执行提示："
-            "\n1. 如果任务里有会议文件路径，必须先读文件，再生成纪要。"
-            "\n2. 长文件要根据 next_start_line 继续读取，直到关键议题、决策和行动项足够完整。"
-            "\n3. 如果用户没给输出路径，先推导默认 Markdown 路径，再写文件。"
-            "\n4. 只有在 write_text_file 成功后，才可以告知用户“已经生成并保存”。";
+            "\n1. 如果用户在问“默认目录里有哪些会议原文”，先列目录，再决定读取哪个文件。"
+            "\n2. 如果任务里有会议文件路径，必须先读文件，再生成纪要。"
+            "\n3. 长文件要根据 next_start_line 继续读取，直到关键议题、决策和行动项足够完整。"
+            "\n4. 如果用户没给输出路径，先推导默认 Markdown 路径，再写文件。"
+            "\n5. 只有在 write_text_file 成功后，才可以告知用户“已经生成并保存”。";
         return prompt;
     }
 
@@ -230,7 +235,7 @@ protected:
      * @return 候选工具数量
      */
     int rag_tool_top_k() const override {
-        return 4;
+        return 5;
     }
 
     /**

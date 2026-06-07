@@ -45,6 +45,9 @@ bool is_ops_tool_name(const std::string& tool_name) {
            lowered.find("disk") != std::string::npos ||
            lowered.find("network") != std::string::npos ||
            lowered.find("process") != std::string::npos ||
+           lowered.find("port") != std::string::npos ||
+           lowered.find("ping") != std::string::npos ||
+           lowered.find("host") != std::string::npos ||
            lowered.find("system") != std::string::npos ||
            lowered.find("server") != std::string::npos ||
            lowered.find("overview") != std::string::npos;
@@ -144,6 +147,8 @@ protected:
             "应优先调用工具获取事实数据，再基于结果作答。"
             "不要编造指标，不要假设工具已经返回不存在的数据。"
             "如果问题是“服务器很卡/状态如何”，通常应先查看整体概览，再按需要补查 CPU、磁盘、网络和 top 进程。"
+            "如果用户询问端口是否在监听、被谁占用，应优先调用 check_port_listening。"
+            "如果用户询问主机是否可达、链路是否通，应优先调用 ping_host，必要时再结合网络快照。"
             "如果工具调用失败，请说明失败点，并基于已知信息给出保守建议。"
             "最终回答请使用中文，优先包含“结论、证据、建议”三部分。"
             "\n当前任务：" + prepared_query;
@@ -215,7 +220,8 @@ protected:
             "\n1. 如果是“状态如何/帮我巡检”，优先使用 overview 类工具。"
             "\n2. 如果是“很卡/很慢/高负载”，优先检查 CPU，再结合 top 进程。"
             "\n3. 如果涉及空间不足、写入失败、日志打满，优先检查磁盘。"
-            "\n4. 如果涉及连不上、丢包、网络慢，优先检查网络。";
+            "\n4. 如果涉及端口监听、端口占用、服务起不来，优先检查 check_port_listening。"
+            "\n5. 如果涉及主机不可达、链路抖动、丢包，优先检查 ping_host，再补充网络快照。";
         return prompt;
     }
 
@@ -224,7 +230,7 @@ protected:
      * @return 候选工具数量
      */
     int rag_tool_top_k() const override {
-        return 6;
+        return 8;
     }
 
     /**

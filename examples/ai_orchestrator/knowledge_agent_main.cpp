@@ -142,11 +142,14 @@ protected:
             "并基于知识库检索结果回答问题。"
             "请严格遵守以下规则："
             "\n1. 如果用户给出文件路径并要求导入、入库、向量化、建立知识库，优先调用 ingest_knowledge_file。"
-            "\n2. 如果用户要求根据知识库回答、检索文档、查询资料，必须先调用 search_knowledge_base，再基于返回片段回答。"
-            "\n3. 不要编造知识库中不存在的事实；当检索结果不足时，要明确说明“当前知识库未检索到足够证据”。"
-            "\n4. 回答知识库问答时，优先引用 source_path 和 chunk_index 作为证据。"
-            "\n5. 如果用户既要求导入文档，又要求立刻问答，可以先入库，再检索，再回答。"
-            "\n6. 最终回答请使用中文；入库任务需要说明写入了多少个切片、用了哪个集合；问答任务需要给出简明结论和证据来源。"
+            "\n2. 如果用户要求查看知识库规模、文档数、chunk 数或最近更新时间，优先调用 get_knowledge_stats。"
+            "\n3. 如果用户要求给文档打标签、补充元数据，优先调用 update_knowledge_metadata。"
+            "\n4. 如果用户要求按标签、分类、元数据范围检索，必须先调用 search_by_metadata，再基于返回片段回答。"
+            "\n5. 如果用户要求根据知识库回答、检索文档、查询资料，必须先调用 search_knowledge_base，再基于返回片段回答。"
+            "\n6. 不要编造知识库中不存在的事实；当检索结果不足时，要明确说明“当前知识库未检索到足够证据”。"
+            "\n7. 回答知识库问答时，优先引用 source_path 和 chunk_index 作为证据。"
+            "\n8. 如果用户既要求导入文档，又要求立刻问答，可以先入库，再检索，再回答。"
+            "\n9. 最终回答请使用中文；入库任务需要说明写入了多少个切片、用了哪个集合；问答任务需要给出简明结论和证据来源。"
             "\n当前任务：" + prepared_query;
     }
 
@@ -213,9 +216,12 @@ protected:
         prompt +=
             "\n知识库执行提示："
             "\n1. 入库任务优先 ingest_knowledge_file，不要自己假设切片数量或入库结果。"
-            "\n2. 问答任务先 search_knowledge_base，再回答。"
-            "\n3. 当 search_knowledge_base 返回 match_count=0 时，不要臆造答案，应明确说明未命中。"
-            "\n4. 当回答使用了检索结果时，请点出 source_path 和 chunk_index 作为证据。";
+            "\n2. 统计任务优先 get_knowledge_stats。"
+            "\n3. 打标签或补元数据任务优先 update_knowledge_metadata。"
+            "\n4. 带标签过滤的问答任务先 search_by_metadata，再回答。"
+            "\n5. 普通知识库问答任务先 search_knowledge_base，再回答。"
+            "\n6. 当 search_knowledge_base 或 search_by_metadata 返回 match_count=0 时，不要臆造答案，应明确说明未命中。"
+            "\n7. 当回答使用了检索结果时，请点出 source_path 和 chunk_index 作为证据。";
         return prompt;
     }
 
@@ -224,7 +230,7 @@ protected:
      * @return 候选工具数量
      */
     int rag_tool_top_k() const override {
-        return 4;
+        return 6;
     }
 
     /**

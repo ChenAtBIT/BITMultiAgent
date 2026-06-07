@@ -56,6 +56,8 @@ MCP_SERVER_PATH="$MCP_BUILD_DIR/mcp_server"
 MCP_PLUGINS_PATH="$MCP_BUILD_DIR/plugins"
 MCP_LOGS_PATH="$BUILD_DIR/runtime/mcp_server/logs"
 ENABLE_MCP="${ENABLE_MCP:-false}"
+MEETING_FILES_ROOT="${MEETING_FILES_ROOT:-$PROJECT_ROOT/docs/examples}"
+export MEETING_FILES_ROOT
 KNOWLEDGE_BASE_DB_PATH="${KNOWLEDGE_BASE_DB_PATH:-$BUILD_DIR/runtime/examples/ai_orchestrator/knowledge_base/knowledge_base.db}"
 export KNOWLEDGE_BASE_DB_PATH
 
@@ -127,6 +129,7 @@ if [ "$ENABLE_MCP" == "true" ] && [ -f "$MCP_SERVER_PATH" ]; then
     echo "MCP 已启用: $MCP_SERVER_PATH"
     echo "MCP 插件目录: $MCP_PLUGINS_PATH"
     echo "MCP 日志目录: $MCP_LOGS_PATH"
+    echo "会议原文默认目录: $MEETING_FILES_ROOT"
     echo "知识库数据库路径: $KNOWLEDGE_BASE_DB_PATH"
 fi
 

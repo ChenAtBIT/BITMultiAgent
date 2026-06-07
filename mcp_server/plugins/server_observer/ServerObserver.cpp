@@ -7,6 +7,7 @@
 #include "json.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -15,9 +16,11 @@
 #include <fstream>
 #include <iomanip>
 #include <map>
+#include <regex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <sys/wait.h>
 #include <thread>
 #include <vector>
 
@@ -48,6 +51,11 @@ struct NetworkCounters {
     unsigned long long tx_errors = 0;
     unsigned long long rx_drops = 0;
     unsigned long long tx_drops = 0;
+};
+
+struct CommandResult {
+    std::string output;
+    int exit_code = 0;
 };
 
 /**
@@ -172,6 +180,121 @@ std::string make_text_response(const std::string& payload, bool is_error) {
     response["content"].push_back(content);
     response["isError"] = is_error;
     return response.dump();
+}
+
+/**
+ * @brief 执行本地诊断命令并收集输出
+ * @param command 诊断命令
+ * @return 标准输出与退出码
+ */
+CommandResult run_command_capture(const std::string& command) {
+    std::FILE* pipe = popen(command.c_str(), "r");
+    if (!pipe) {
+        throw std::runtime_error("无法执行命令: " + command);
+    }
+
+    std::string output;
+    char buffer[512];
+    while (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        output.append(buffer);
+    }
+
+    const int raw_status = pclose(pipe);
+    int exit_code = raw_status;
+#ifdef WIFEXITED
+    if (WIFEXITED(raw_status)) {
+        exit_code = WEXITSTATUS(raw_status);
+    }
+#endif
+
+    return {output, exit_code};
+}
+
+/**
+ * @brief 校验并规范化主机名/地址
+ * @param host 原始目标
+ * @return 清洗后的目标
+ */
+std::string sanitize_host_or_throw(const std::string& host) {
+    const std::string trimmed = trim(host);
+    if (trimmed.empty()) {
+        throw std::runtime_error("host 不能为空");
+    }
+
+    for (unsigned char ch : trimmed) {
+        if (std::isalnum(ch) ||
+            ch == '.' ||
+            ch == '-' ||
+            ch == '_' ||
+            ch == ':' ||
+            ch == '%') {
+            continue;
+        }
+        throw std::runtime_error("host 包含不安全字符: " + trimmed);
+    }
+
+    return trimmed;
+}
+
+/**
+ * @brief 规范化协议过滤参数
+ * @param protocol 原始协议名
+ * @return tcp、udp 或 all
+ */
+std::string normalize_protocol_filter(const std::string& protocol) {
+    std::string trimmed = trim(protocol);
+    std::transform(trimmed.begin(), trimmed.end(), trimmed.begin(),
+        [](unsigned char ch) {
+            return static_cast<char>(std::tolower(ch));
+        });
+    if (trimmed.empty() || trimmed == "all") {
+        return "all";
+    }
+    if (trimmed == "tcp" || trimmed == "udp") {
+        return trimmed;
+    }
+    throw std::runtime_error("protocol 只支持 tcp、udp 或 all");
+}
+
+/**
+ * @brief 拆分地址与端口
+ * @param endpoint 形如 0.0.0.0:5000 或 [::1]:323 的端点字符串
+ * @return 地址与端口文本
+ */
+std::pair<std::string, std::string> split_endpoint(const std::string& endpoint) {
+    const size_t colon_pos = endpoint.rfind(':');
+    if (colon_pos == std::string::npos) {
+        return {endpoint, ""};
+    }
+
+    std::string address = endpoint.substr(0, colon_pos);
+    if (!address.empty() && address.front() == '[' && address.back() == ']') {
+        address = address.substr(1, address.size() - 2);
+    }
+    return {address, endpoint.substr(colon_pos + 1)};
+}
+
+/**
+ * @brief 解析 ss 命令输出中的进程信息
+ * @param owners_text ss 行尾的 users:(...) 文本
+ * @return 进程数组
+ */
+json parse_socket_owners(const std::string& owners_text) {
+    static const std::regex owner_regex(
+        R"owner(\("([^"]+)",pid=([0-9]+),fd=([0-9]+)\))owner");
+    json owners = json::array();
+
+    std::sregex_iterator iter(owners_text.begin(), owners_text.end(), owner_regex);
+    std::sregex_iterator end;
+    for (; iter != end; ++iter) {
+        owners.push_back({
+            {"process_name", (*iter)[1].str()},
+            {"pid", std::stoi((*iter)[2].str())},
+            {"fd", std::stoi((*iter)[3].str())}
+        });
+    }
+
+    return owners;
 }
 
 /**
@@ -588,6 +711,211 @@ json collect_system_overview(const std::string& server_id) {
 }
 
 /**
+ * @brief 检查指定端口是否存在监听或绑定
+ * @param server_id 服务器标识
+ * @param port 目标端口
+ * @param protocol 协议过滤
+ * @return 端口监听结果
+ */
+json collect_port_listening(const std::string& server_id,
+                            int port,
+                            const std::string& protocol) {
+    if (port <= 0 || port > 65535) {
+        throw std::runtime_error("port 必须在 1 到 65535 之间");
+    }
+
+    const std::string safe_protocol = normalize_protocol_filter(protocol);
+    const std::string command =
+        "ss -H -ltnup 'sport = :" + std::to_string(port) + "' 2>/dev/null";
+    const CommandResult command_result = run_command_capture(command);
+
+    if (command_result.exit_code == 127) {
+        throw std::runtime_error("未找到 ss 命令，无法检查端口监听状态");
+    }
+
+    json entries = json::array();
+    std::istringstream stream(command_result.output);
+    std::string line;
+    while (std::getline(stream, line)) {
+        const std::string trimmed_line = trim(line);
+        if (trimmed_line.empty()) {
+            continue;
+        }
+
+        std::istringstream line_stream(trimmed_line);
+        std::string socket_protocol;
+        std::string state;
+        std::string recv_q;
+        std::string send_q;
+        std::string local_endpoint;
+        std::string peer_endpoint;
+        line_stream >> socket_protocol >> state >> recv_q >> send_q >> local_endpoint >> peer_endpoint;
+        if (line_stream.fail()) {
+            continue;
+        }
+
+        if (safe_protocol != "all" && socket_protocol != safe_protocol) {
+            continue;
+        }
+
+        std::string owners_text;
+        std::getline(line_stream, owners_text);
+        const auto [local_address, local_port] = split_endpoint(local_endpoint);
+        const auto [peer_address, peer_port] = split_endpoint(peer_endpoint);
+
+        entries.push_back({
+            {"protocol", socket_protocol},
+            {"state", state},
+            {"recv_q", recv_q},
+            {"send_q", send_q},
+            {"local_address", local_address},
+            {"local_port", local_port},
+            {"peer_address", peer_address},
+            {"peer_port", peer_port},
+            {"owners", parse_socket_owners(owners_text)}
+        });
+    }
+
+    const bool is_listening = !entries.empty();
+    std::string recommendation = "端口当前未检测到监听或绑定记录。";
+    if (is_listening) {
+        recommendation = "端口已被本机进程占用，可根据 owners 字段继续定位具体服务。";
+    }
+
+    json result = {
+        {"tool", "check_port_listening"},
+        {"server_id", server_id},
+        {"port", port},
+        {"protocol_filter", safe_protocol},
+        {"is_listening", is_listening},
+        {"listener_count", entries.size()},
+        {"entries", entries},
+        {"recommendation", recommendation},
+        {"observed_at", now_iso8601()}
+    };
+    return result;
+}
+
+/**
+ * @brief 对目标主机执行 ping 连通性诊断
+ * @param server_id 服务器标识
+ * @param host 目标主机名或 IP
+ * @param count 探测次数
+ * @param timeout_sec 单包超时秒数
+ * @param ip_version IP 版本偏好
+ * @return ping 诊断结果
+ */
+json collect_ping_host(const std::string& server_id,
+                       const std::string& host,
+                       int count,
+                       int timeout_sec,
+                       const std::string& ip_version) {
+    const std::string safe_host = sanitize_host_or_throw(host);
+    const int safe_count = std::clamp(count, 1, 10);
+    const int safe_timeout_sec = std::clamp(timeout_sec, 1, 10);
+
+    std::string safe_ip_version = trim(ip_version);
+    std::transform(safe_ip_version.begin(), safe_ip_version.end(), safe_ip_version.begin(),
+        [](unsigned char ch) {
+            return static_cast<char>(std::tolower(ch));
+        });
+    if (safe_ip_version.empty()) {
+        safe_ip_version = "auto";
+    }
+    if (safe_ip_version != "auto" &&
+        safe_ip_version != "4" &&
+        safe_ip_version != "6") {
+        throw std::runtime_error("ip_version 只支持 auto、4 或 6");
+    }
+
+    std::string command = "ping -n -c " + std::to_string(safe_count) +
+        " -W " + std::to_string(safe_timeout_sec);
+    if (safe_ip_version == "4") {
+        command += " -4";
+    } else if (safe_ip_version == "6") {
+        command += " -6";
+    }
+    command += " " + safe_host + " 2>&1";
+
+    const CommandResult command_result = run_command_capture(command);
+    if (command_result.exit_code == 127) {
+        throw std::runtime_error("未找到 ping 命令，无法执行连通性诊断");
+    }
+
+    std::string resolved_ip;
+    int transmitted = 0;
+    int received = 0;
+    double packet_loss_percent = 100.0;
+    double min_rtt_ms = 0.0;
+    double avg_rtt_ms = 0.0;
+    double max_rtt_ms = 0.0;
+    double mdev_rtt_ms = 0.0;
+    bool has_rtt = false;
+
+    std::istringstream output_stream(command_result.output);
+    std::string line;
+    const std::regex ping_header_regex(R"(^PING\s+\S+\s+\(([^)]+)\))");
+    const std::regex packet_regex(
+        R"(([0-9]+)\s+packets transmitted,\s+([0-9]+)(?:\s+packets)? received,\s+([0-9.]+)% packet loss)");
+    const std::regex rtt_regex(
+        R"((?:rtt|round-trip) min/avg/max/(?:mdev|stddev) = ([0-9.]+)/([0-9.]+)/([0-9.]+)/([0-9.]+) ms)");
+
+    while (std::getline(output_stream, line)) {
+        std::smatch match;
+        if (resolved_ip.empty() &&
+            std::regex_search(line, match, ping_header_regex)) {
+            resolved_ip = match[1].str();
+        }
+        if (std::regex_search(line, match, packet_regex)) {
+            transmitted = std::stoi(match[1].str());
+            received = std::stoi(match[2].str());
+            packet_loss_percent = std::stod(match[3].str());
+        }
+        if (std::regex_search(line, match, rtt_regex)) {
+            min_rtt_ms = std::stod(match[1].str());
+            avg_rtt_ms = std::stod(match[2].str());
+            max_rtt_ms = std::stod(match[3].str());
+            mdev_rtt_ms = std::stod(match[4].str());
+            has_rtt = true;
+        }
+    }
+
+    std::string status = "reachable";
+    std::string recommendation = "链路连通性正常。";
+    if (received == 0) {
+        status = "unreachable";
+        recommendation = "未收到任何响应，建议检查目标主机状态、DNS 解析、防火墙和路由。";
+    } else if (packet_loss_percent > 0.0) {
+        status = "degraded";
+        recommendation = "检测到丢包，建议继续检查链路质量、交换机端口和网络拥塞情况。";
+    }
+
+    json result = {
+        {"tool", "ping_host"},
+        {"server_id", server_id},
+        {"host", safe_host},
+        {"resolved_ip", resolved_ip},
+        {"count", safe_count},
+        {"timeout_sec", safe_timeout_sec},
+        {"ip_version", safe_ip_version},
+        {"status", status},
+        {"transmitted", transmitted},
+        {"received", received},
+        {"packet_loss_percent", packet_loss_percent},
+        {"has_rtt", has_rtt},
+        {"min_rtt_ms", min_rtt_ms},
+        {"avg_rtt_ms", avg_rtt_ms},
+        {"max_rtt_ms", max_rtt_ms},
+        {"mdev_rtt_ms", mdev_rtt_ms},
+        {"command_exit_code", command_result.exit_code},
+        {"recommendation", recommendation},
+        {"raw_output", command_result.output},
+        {"observed_at", now_iso8601()}
+    };
+    return result;
+}
+
+/**
  * @brief 统一处理工具请求
  * @param tool_name 工具名
  * @param args 工具参数
@@ -616,6 +944,20 @@ json handle_tool_request(const std::string& tool_name, const json& args) {
             server_id,
             get_int_arg(args, "limit", 5),
             get_string_arg(args, "sort_by", "cpu"));
+    }
+    if (tool_name == "check_port_listening") {
+        return collect_port_listening(
+            server_id,
+            get_int_arg(args, "port", 0),
+            get_string_arg(args, "protocol", "all"));
+    }
+    if (tool_name == "ping_host") {
+        return collect_ping_host(
+            server_id,
+            get_string_arg(args, "host", ""),
+            get_int_arg(args, "count", 4),
+            get_int_arg(args, "timeout_sec", 2),
+            get_string_arg(args, "ip_version", "auto"));
     }
 
     throw std::runtime_error("未知工具: " + tool_name);
@@ -685,6 +1027,38 @@ static PluginTool methods[] = {
                 "limit": { "type": "integer", "minimum": 1, "maximum": 20, "description": "Maximum number of processes to return." },
                 "sort_by": { "type": "string", "enum": ["cpu", "memory"], "description": "Sort dimension." }
             },
+            "additionalProperties": false
+        })"
+    },
+    {
+        "check_port_listening",
+        "Checks whether a local TCP or UDP port is listening and which process owns it.",
+        R"({
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "server_id": { "type": "string", "description": "Logical server identifier used for labeling. Defaults to local." },
+                "port": { "type": "integer", "minimum": 1, "maximum": 65535, "description": "Port number to inspect." },
+                "protocol": { "type": "string", "enum": ["all", "tcp", "udp"], "description": "Protocol filter. Defaults to all." }
+            },
+            "required": ["port"],
+            "additionalProperties": false
+        })"
+    },
+    {
+        "ping_host",
+        "Runs a local ping diagnostic to a host and returns packet loss plus latency summary.",
+        R"({
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "properties": {
+                "server_id": { "type": "string", "description": "Logical server identifier used for labeling. Defaults to local." },
+                "host": { "type": "string", "description": "Hostname or IP address to probe." },
+                "count": { "type": "integer", "minimum": 1, "maximum": 10, "description": "Number of ICMP echo requests to send." },
+                "timeout_sec": { "type": "integer", "minimum": 1, "maximum": 10, "description": "Per-request timeout in seconds." },
+                "ip_version": { "type": "string", "enum": ["auto", "4", "6"], "description": "IP version preference. Defaults to auto." }
+            },
+            "required": ["host"],
             "additionalProperties": false
         })"
     }

@@ -8,9 +8,13 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -109,6 +113,37 @@ static PluginTool tools[] = {
             },
             "required": ["source_path"]
         })"
+    },
+    {
+        "list_directory_files",
+        "查看会议原文默认目录或指定目录下有哪些文件，适合先浏览会议转写稿、会议记录、议程和已生成纪要。",
+        R"({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "可选目录路径；未提供时默认读取环境变量 MEETING_FILES_ROOT 对应目录。"
+                },
+                "recursive": {
+                    "type": "boolean",
+                    "description": "是否递归列出子目录文件，默认 false。"
+                },
+                "include_directories": {
+                    "type": "boolean",
+                    "description": "是否把目录本身也列入结果，默认 false。"
+                },
+                "include_hidden": {
+                    "type": "boolean",
+                    "description": "是否包含隐藏文件，默认 false。"
+                },
+                "max_entries": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500,
+                    "description": "最多返回多少个条目，默认 100。"
+                }
+            }
+        })"
     }
 };
 
@@ -143,6 +178,19 @@ json make_text_result(const std::string& text, bool is_error) {
     });
     response["isError"] = is_error;
     return response;
+}
+
+/**
+ * @brief 读取环境变量
+ * @param name 环境变量名
+ * @return 环境变量值；不存在时返回空字符串
+ */
+std::string get_env_or_empty(const char* name) {
+    const char* value = std::getenv(name);
+    if (!value || value[0] == '\0') {
+        return "";
+    }
+    return value;
 }
 
 /**
@@ -223,6 +271,60 @@ std::string trim(const std::string& text) {
 }
 
 /**
+ * @brief 判断文件名是否为隐藏项
+ * @param path 目标路径
+ * @return true 表示以点开头
+ */
+bool is_hidden_path(const std::filesystem::path& path) {
+    const std::string filename = path.filename().string();
+    return !filename.empty() && filename.front() == '.';
+}
+
+/**
+ * @brief 生成当前 UTC 时间戳
+ * @return ISO-8601 格式时间字符串
+ */
+std::string now_iso8601() {
+    const std::time_t now = std::time(nullptr);
+    std::tm utc_time{};
+#ifdef _WIN32
+    gmtime_s(&utc_time, &now);
+#else
+    gmtime_r(&now, &utc_time);
+#endif
+
+    std::ostringstream oss;
+    oss << std::put_time(&utc_time, "%Y-%m-%dT%H:%M:%SZ");
+    return oss.str();
+}
+
+/**
+ * @brief 将文件时间转换为 ISO-8601 字符串
+ * @param path 目标路径
+ * @return 最后修改时间字符串
+ */
+std::string last_modified_iso8601(const std::filesystem::path& path) {
+    const auto file_time = std::filesystem::last_write_time(path);
+    const auto system_now = std::chrono::system_clock::now();
+    const auto file_clock_now = std::filesystem::file_time_type::clock::now();
+    const auto system_time =
+        std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+            file_time - file_clock_now + system_now);
+    const std::time_t raw_time = std::chrono::system_clock::to_time_t(system_time);
+
+    std::tm utc_time{};
+#ifdef _WIN32
+    gmtime_s(&utc_time, &raw_time);
+#else
+    gmtime_r(&raw_time, &utc_time);
+#endif
+
+    std::ostringstream oss;
+    oss << std::put_time(&utc_time, "%Y-%m-%dT%H:%M:%SZ");
+    return oss.str();
+}
+
+/**
  * @brief 将输入路径规范化为绝对路径
  * @param raw_path 用户传入路径
  * @return 规范化后的路径
@@ -238,6 +340,26 @@ std::filesystem::path normalize_path(const std::string& raw_path) {
     }
 
     return std::filesystem::absolute(path).lexically_normal();
+}
+
+/**
+ * @brief 获取默认会议文件目录
+ * @return 默认目录路径
+ */
+std::filesystem::path default_meeting_root() {
+    const std::string env_path = trim(get_env_or_empty("MEETING_FILES_ROOT"));
+    if (!env_path.empty()) {
+        return normalize_path(env_path);
+    }
+
+    const std::filesystem::path docs_examples =
+        (std::filesystem::current_path() / "docs" / "examples").lexically_normal();
+    if (std::filesystem::exists(docs_examples) &&
+        std::filesystem::is_directory(docs_examples)) {
+        return docs_examples;
+    }
+
+    return std::filesystem::current_path();
 }
 
 /**
@@ -439,6 +561,94 @@ std::string handle_derive_markdown_output_path(const json& args) {
     return result.dump();
 }
 
+/**
+ * @brief 列出目录下的文件或子目录
+ * @param args 工具参数
+ * @return JSON 字符串结果
+ */
+std::string handle_list_directory_files(const json& args) {
+    const std::string raw_path = trim(get_string_arg(args, "path", ""));
+    const bool recursive = get_bool_arg(args, "recursive", false);
+    const bool include_directories = get_bool_arg(args, "include_directories", false);
+    const bool include_hidden = get_bool_arg(args, "include_hidden", false);
+    const int max_entries = std::clamp(get_int_arg(args, "max_entries", 100), 1, 500);
+
+    const bool used_default_path = raw_path.empty();
+    const std::filesystem::path directory = used_default_path
+        ? default_meeting_root()
+        : normalize_path(raw_path);
+
+    if (!std::filesystem::exists(directory)) {
+        throw std::runtime_error("目录不存在: " + directory.string());
+    }
+    if (!std::filesystem::is_directory(directory)) {
+        throw std::runtime_error("目标不是目录: " + directory.string());
+    }
+
+    json entries = json::array();
+    std::vector<json> collected_entries;
+
+    // 先收集再排序，保证默认目录下的会议文件展示顺序稳定。
+    auto collect_entry = [&](const std::filesystem::directory_entry& entry) {
+        const std::filesystem::path entry_path = entry.path();
+        if (!include_hidden && is_hidden_path(entry_path)) {
+            return;
+        }
+        if (entry.is_directory() && !include_directories) {
+            return;
+        }
+        if (!entry.is_directory() && !entry.is_regular_file()) {
+            return;
+        }
+
+        json item;
+        item["name"] = entry_path.filename().string();
+        item["path"] = entry_path.lexically_normal().string();
+        item["type"] = entry.is_directory() ? "directory" : "file";
+        item["size_bytes"] = entry.is_regular_file() ? entry.file_size() : 0;
+        item["last_modified"] = last_modified_iso8601(entry_path);
+        collected_entries.push_back(std::move(item));
+    };
+
+    if (recursive) {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
+            collect_entry(entry);
+        }
+    } else {
+        for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+            collect_entry(entry);
+        }
+    }
+
+    std::sort(collected_entries.begin(), collected_entries.end(),
+        [](const json& left, const json& right) {
+            if (left.value("type", "") != right.value("type", "")) {
+                return left.value("type", "") < right.value("type", "");
+            }
+            return left.value("path", "") < right.value("path", "");
+        });
+
+    for (size_t index = 0;
+         index < collected_entries.size() && static_cast<int>(index) < max_entries;
+         ++index) {
+        entries.push_back(collected_entries[index]);
+    }
+
+    json result;
+    result["success"] = true;
+    result["path"] = directory.string();
+    result["used_default_path"] = used_default_path;
+    result["recursive"] = recursive;
+    result["include_directories"] = include_directories;
+    result["include_hidden"] = include_hidden;
+    result["max_entries"] = max_entries;
+    result["returned_entry_count"] = entries.size();
+    result["total_entry_count"] = collected_entries.size();
+    result["entries"] = entries;
+    result["observed_at"] = now_iso8601();
+    return result.dump();
+}
+
 }  // namespace
 
 const char* GetNameImpl() {
@@ -472,6 +682,10 @@ char* HandleRequestImpl(const char* req) {
         if (tool_name == "derive_markdown_output_path") {
             return make_response(make_text_result(
                 handle_derive_markdown_output_path(arguments), false));
+        }
+        if (tool_name == "list_directory_files") {
+            return make_response(make_text_result(
+                handle_list_directory_files(arguments), false));
         }
 
         return make_response(make_text_result("未知工具: " + tool_name, true));

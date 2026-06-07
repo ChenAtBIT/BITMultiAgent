@@ -315,7 +315,7 @@ ls -la build/mcp_server/plugins/knowledge_base_tools/libknowledge_base_tools.so
 
 本快速启动将启动项目的**所有功能**，包括：
 - ✅ 多 Agent 协作系统 (Registry + Orchestrator + Math Agent + General Agent + Ops Agent + Minutes Agent + Knowledge Agent)
-- ✅ MCP 工具调用 (calculator, add, subtract, multiply, divide, power, sqrt, factorial, get_system_overview, get_cpu_snapshot, get_disk_usage, get_network_snapshot, get_top_processes, read_text_file, write_text_file, derive_markdown_output_path, ingest_knowledge_file, search_knowledge_base)
+- ✅ MCP 工具调用 (calculator, add, subtract, multiply, divide, power, sqrt, factorial, get_system_overview, get_cpu_snapshot, get_disk_usage, get_network_snapshot, get_top_processes, check_port_listening, ping_host, read_text_file, write_text_file, derive_markdown_output_path, list_directory_files, ingest_knowledge_file, search_knowledge_base, get_knowledge_stats, update_knowledge_metadata, search_by_metadata)
 - ✅ RAG-MCP 智能工具选择 (基于向量相似度动态检索相关工具，而非一次性提供所有工具给 LLM)
 - ✅ 通用问答 Agent (General Agent，处理 general 场景，直接回答且不调用工具)
 - ✅ 运维巡检 Agent (Ops Agent，负责 CPU、磁盘、网络、进程检查和建议生成)
@@ -343,6 +343,9 @@ export QWEN_API_KEY=sk-your-qwen-api-key
 # 必需：DashScope API Key（用于 RAG 智能工具选择）
 # RAG 会将工具描述向量化存储，查询时动态检索相关工具
 export DASHSCOPE_API_KEY=sk-your-dashscope-api-key
+
+# 可选：Minutes Agent 默认浏览的会议原文目录
+export MEETING_FILES_ROOT=$(pwd)/docs/examples
 
 # 可选：Knowledge Agent 默认使用的 sqlite-vec 数据库路径
 export KNOWLEDGE_BASE_DB_PATH=$(pwd)/build/runtime/examples/ai_orchestrator/knowledge_base/knowledge_base.db
@@ -607,7 +610,7 @@ cmake --build build --target ai_orchestrator -j$(nproc)
 # [RedisTaskStore] 连接到 Redis 127.0.0.1:6379
 # [RedisTaskStore] 连接成功
 # [INFO ] MCP client connected to server: .../mcp_server
-# [Ops Agent] MCP 已启用，可用工具: get_system_overview get_cpu_snapshot get_disk_usage get_network_snapshot get_top_processes ...
+# [Ops Agent] MCP 已启用，可用工具: get_system_overview get_cpu_snapshot get_disk_usage get_network_snapshot get_top_processes check_port_listening ping_host ...
 # [Ops Agent] 初始化完成
 # [Ops Agent] 启动在端口 5003
 # [Ops Agent] 已注册到服务中心
@@ -628,14 +631,14 @@ cmake --build build --target ai_orchestrator -j$(nproc)
     --enable-mcp \
     --mcp-server $(pwd)/build/mcp_server/mcp_server \
     --enable-rag \
-    --rag-top-k 4 \
+    --rag-top-k 5 \
     --rag-threshold 0.3
 
 # 输出:
 # [RedisTaskStore] 连接到 Redis 127.0.0.1:6379
 # [RedisTaskStore] 连接成功
 # [INFO ] MCP client connected to server: .../mcp_server
-# [Minutes Agent] MCP 已启用，可用工具: read_text_file write_text_file derive_markdown_output_path ...
+# [Minutes Agent] MCP 已启用，可用工具: read_text_file write_text_file derive_markdown_output_path list_directory_files ...
 # [Minutes Agent] 初始化完成
 # [Minutes Agent] 启动在端口 5004
 # [Minutes Agent] 已注册到服务中心
@@ -646,6 +649,7 @@ cmake --build build --target ai_orchestrator -j$(nproc)
 ```bash
 # 终端 6: Knowledge Agent (知识库 Agent + sqlite-vec 文档入库/检索工具 + RAG 智能工具选择)
 # Agent_communication/examples/ai_orchestrator/knowledge_agent_main.cpp
+export MEETING_FILES_ROOT=$(pwd)/docs/examples
 export KNOWLEDGE_BASE_DB_PATH=$(pwd)/build/runtime/examples/ai_orchestrator/knowledge_base/knowledge_base.db
 
 ./build/examples/ai_orchestrator/ai_knowledge_agent \
@@ -658,14 +662,14 @@ export KNOWLEDGE_BASE_DB_PATH=$(pwd)/build/runtime/examples/ai_orchestrator/know
     --enable-mcp \
     --mcp-server $(pwd)/build/mcp_server/mcp_server \
     --enable-rag \
-    --rag-top-k 4 \
+    --rag-top-k 6 \
     --rag-threshold 0.3
 
 # 输出:
 # [RedisTaskStore] 连接到 Redis 127.0.0.1:6379
 # [RedisTaskStore] 连接成功
 # [INFO ] MCP client connected to server: .../mcp_server
-# [Knowledge Agent] MCP 已启用，可用工具: ingest_knowledge_file search_knowledge_base ...
+# [Knowledge Agent] MCP 已启用，可用工具: ingest_knowledge_file search_knowledge_base get_knowledge_stats update_knowledge_metadata search_by_metadata ...
 # [Knowledge Agent] 初始化完成
 # [Knowledge Agent] 启动在端口 5005
 # [Knowledge Agent] 已注册到服务中心
@@ -938,6 +942,7 @@ gRPC 服务端和客户端，提供 AI 查询接口。
 | read_text_file | 读取会议记录等文本文件 | 读取 `/path/to/meeting.txt` |
 | write_text_file | 写入 Markdown 纪要文件 | 写入 `meeting_minutes.md` |
 | derive_markdown_output_path | 推导默认纪要输出路径 | `meeting.txt` → `meeting_minutes.md` |
+| list_directory_files | 查看默认会议目录或指定目录下有哪些文件 | 列出 `docs/examples` 下的会议原文 |
 | divide | 除法 | `divide(10, 2)` → `5` |
 | power | 幂运算 | `power(2, 10)` → `1024` |
 | sqrt | 平方根 | `sqrt(16)` → `4` |
@@ -947,8 +952,15 @@ gRPC 服务端和客户端，提供 AI 查询接口。
 | get_disk_usage | 磁盘使用情况 | 查看 `/` 或指定路径空间使用率 |
 | get_network_snapshot | 网络状态快照 | 采样吞吐、丢包和错误包 |
 | get_top_processes | Top 进程列表 | 查看最占 CPU 或内存的进程 |
+| check_port_listening | 检查端口是否监听、被谁占用 | 查看 `5005` 是否已被进程监听 |
+| ping_host | 对主机做连通性诊断 | 检查 `10.0.0.12` 的丢包与时延 |
 | ingest_knowledge_file | 文档切片、向量化并写入 sqlite-vec | 导入 `knowledge_base_sample.txt` |
 | search_knowledge_base | 相似度检索知识库片段 | 回答“夜间备份几点开始” |
+| get_knowledge_stats | 查看知识库文档数、chunk 数与最近更新时间 | 检查当前知识库规模 |
+| update_knowledge_metadata | 给已入库文档打标签或写入元数据 | 给文档加上 `project-a`、`ops` 标签 |
+| search_by_metadata | 先按标签过滤，再做向量检索 | 在 `ops` 标签范围内回答问题 |
+
+math Agent 有 8 个，Ops Agent 有 7 个，Minutes Agent 有 4 个，Knowledge Agent 有 5 个，合计 24 个工具。
 
 ### 4. MCP Client 传输方式
 
@@ -1090,28 +1102,28 @@ grep -E "General Agent|初始化完成|已注册到服务中心" build/runtime/e
 # [General Agent] 已注册到服务中心
 
 # 查看 Ops Agent 日志（应正常加载 server_observer 工具并注册成功）
-grep -E "Ops Agent|初始化完成|已注册到服务中心|get_system_overview|get_cpu_snapshot|get_disk_usage|get_network_snapshot|get_top_processes" build/runtime/examples/ai_orchestrator/logs/ops_agent.log
+grep -E "Ops Agent|初始化完成|已注册到服务中心|get_system_overview|get_cpu_snapshot|get_disk_usage|get_network_snapshot|get_top_processes|check_port_listening|ping_host" build/runtime/examples/ai_orchestrator/logs/ops_agent.log
 
 # 预期输出:
-# [Ops Agent] MCP 已启用，可用工具: get_system_overview get_cpu_snapshot get_disk_usage get_network_snapshot get_top_processes ...
+# [Ops Agent] MCP 已启用，可用工具: get_system_overview get_cpu_snapshot get_disk_usage get_network_snapshot get_top_processes check_port_listening ping_host ...
 # [Ops Agent] 初始化完成
 # [Ops Agent] 启动在端口 5003
 # [Ops Agent] 已注册到服务中心
 
 # 查看 Minutes Agent 日志（应正常加载会议文件工具并注册成功）
-grep -E "Minutes Agent|初始化完成|已注册到服务中心|read_text_file|write_text_file|derive_markdown_output_path" build/runtime/examples/ai_orchestrator/logs/minutes_agent.log
+grep -E "Minutes Agent|初始化完成|已注册到服务中心|read_text_file|write_text_file|derive_markdown_output_path|list_directory_files" build/runtime/examples/ai_orchestrator/logs/minutes_agent.log
 
 # 预期输出:
-# [Minutes Agent] MCP 已启用，可用工具: read_text_file write_text_file derive_markdown_output_path ...
+# [Minutes Agent] MCP 已启用，可用工具: read_text_file write_text_file derive_markdown_output_path list_directory_files ...
 # [Minutes Agent] 初始化完成
 # [Minutes Agent] 启动在端口 5004
 # [Minutes Agent] 已注册到服务中心
 
 # 查看 Knowledge Agent 日志（应正常加载 sqlite-vec 知识库工具并注册成功）
-grep -E "Knowledge Agent|初始化完成|已注册到服务中心|ingest_knowledge_file|search_knowledge_base" build/runtime/examples/ai_orchestrator/logs/knowledge_agent.log
+grep -E "Knowledge Agent|初始化完成|已注册到服务中心|ingest_knowledge_file|search_knowledge_base|get_knowledge_stats|update_knowledge_metadata|search_by_metadata" build/runtime/examples/ai_orchestrator/logs/knowledge_agent.log
 
 # 预期输出:
-# [Knowledge Agent] MCP 已启用，可用工具: ingest_knowledge_file search_knowledge_base ...
+# [Knowledge Agent] MCP 已启用，可用工具: ingest_knowledge_file search_knowledge_base get_knowledge_stats update_knowledge_metadata search_by_metadata ...
 # [Knowledge Agent] 初始化完成
 # [Knowledge Agent] 启动在端口 5005
 # [Knowledge Agent] 已注册到服务中心
@@ -1177,6 +1189,7 @@ Relevant Tools (3):
 | ENABLE_RAG | 否 | 是否启用 RAG 智能工具选择 (true/false，默认 false) | - |
 | RAG_TOP_K | 否 | RAG 返回工具数量 (默认: 5) | - |
 | RAG_THRESHOLD | 否 | RAG 相似度阈值 (默认: 0.3) | - |
+| MEETING_FILES_ROOT | 否 | Minutes Agent 默认列会议原文时使用的目录 | - |
 | KNOWLEDGE_BASE_DB_PATH | 否 | Knowledge Agent 默认使用的 sqlite-vec 数据库文件路径 | - |
 | KNOWLEDGE_BASE_EMBEDDING_MODEL | 否 | 知识库向量化模型，默认 `text-embedding-v2` | - |
 | RPC_SERVER_PORT | 否 | RPC Server 端口 (默认: 50051) | - |
@@ -1190,6 +1203,7 @@ export ENABLE_MCP=true
 export ENABLE_RAG=true
 export RAG_TOP_K=5
 export RAG_THRESHOLD=0.3
+export MEETING_FILES_ROOT=$(pwd)/docs/examples
 export KNOWLEDGE_BASE_DB_PATH=$(pwd)/build/runtime/examples/ai_orchestrator/knowledge_base/knowledge_base.db
 ```
 

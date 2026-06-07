@@ -16,11 +16,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -120,6 +123,110 @@ static PluginTool tools[] = {
             },
             "required": ["query"]
         })"
+    },
+    {
+        "get_knowledge_stats",
+        "返回知识库文档数量、chunk 数量和最近更新时间，适合做知识库巡检与入库结果确认。",
+        R"({
+            "type": "object",
+            "properties": {
+                "collection": {
+                    "type": "string",
+                    "description": "可选集合名称；为空时统计整个知识库。"
+                },
+                "db_path": {
+                    "type": "string",
+                    "description": "sqlite-vec 数据库文件路径；未提供时优先读取环境变量 KNOWLEDGE_BASE_DB_PATH。"
+                }
+            }
+        })"
+    },
+    {
+        "update_knowledge_metadata",
+        "给指定知识文档打标签或写入补充元数据，适合为后续按标签检索做准备。",
+        R"({
+            "type": "object",
+            "properties": {
+                "source_path": {
+                    "type": "string",
+                    "description": "需要更新元数据的源文件路径。"
+                },
+                "collection": {
+                    "type": "string",
+                    "description": "可选集合名称，默认 default。"
+                },
+                "db_path": {
+                    "type": "string",
+                    "description": "sqlite-vec 数据库文件路径；未提供时优先读取环境变量 KNOWLEDGE_BASE_DB_PATH。"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "需要写入的标签列表，例如 项目、会议、运维。"
+                },
+                "metadata": {
+                    "type": "object",
+                    "description": "可选补充元数据对象，会与 tags 一起保存。"
+                },
+                "merge": {
+                    "type": "boolean",
+                    "description": "是否与已有标签/元数据合并，默认 true。"
+                }
+            },
+            "required": ["source_path"]
+        })"
+    },
+    {
+        "search_by_metadata",
+        "先按标签过滤知识文档，再对过滤后的文档做向量检索，适合带标签范围约束的知识库问答。",
+        R"({
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "要检索的自然语言问题。"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "用于过滤文档的标签列表。"
+                },
+                "match_mode": {
+                    "type": "string",
+                    "enum": ["all", "any"],
+                    "description": "标签匹配模式；all 表示必须全部命中，any 表示命中任一标签即可。默认 all。"
+                },
+                "collection": {
+                    "type": "string",
+                    "description": "可选集合名称；为空时搜索整个知识库。"
+                },
+                "source_path": {
+                    "type": "string",
+                    "description": "可选源文件路径过滤条件。"
+                },
+                "db_path": {
+                    "type": "string",
+                    "description": "sqlite-vec 数据库文件路径；未提供时优先读取环境变量 KNOWLEDGE_BASE_DB_PATH。"
+                },
+                "top_k": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10,
+                    "description": "返回最相近片段数量，默认 4。"
+                },
+                "max_excerpt_chars": {
+                    "type": "integer",
+                    "minimum": 80,
+                    "maximum": 1200,
+                    "description": "每个检索片段在返回结果中的最大字符数，默认 420。"
+                }
+            },
+            "required": ["query"]
+        })"
     }
 };
 
@@ -134,6 +241,14 @@ struct SearchMatch {
     int chunk_index = 0;
     std::string chunk_text;
     double distance = 0.0;
+};
+
+/**
+ * @brief 文档主键
+ */
+struct DocumentKey {
+    std::string collection;
+    std::string source_path;
 };
 
 /**
@@ -167,6 +282,24 @@ json make_text_result(const std::string& text, bool is_error) {
     });
     response["isError"] = is_error;
     return response;
+}
+
+/**
+ * @brief 生成当前 UTC 时间戳
+ * @return ISO-8601 格式时间字符串
+ */
+std::string now_iso8601() {
+    const std::time_t now = std::time(nullptr);
+    std::tm utc_time{};
+#ifdef _WIN32
+    gmtime_s(&utc_time, &now);
+#else
+    gmtime_r(&now, &utc_time);
+#endif
+
+    std::ostringstream oss;
+    oss << std::put_time(&utc_time, "%Y-%m-%dT%H:%M:%SZ");
+    return oss.str();
 }
 
 /**
@@ -247,6 +380,39 @@ bool get_bool_arg(const json& args, const std::string& key, bool default_value) 
 }
 
 /**
+ * @brief 读取对象参数
+ * @param args 参数对象
+ * @param key 字段名
+ * @return JSON 对象；不存在时返回空对象
+ */
+json get_object_arg(const json& args, const std::string& key) {
+    if (!args.contains(key) || args[key].is_null() || !args[key].is_object()) {
+        return json::object();
+    }
+    return args[key];
+}
+
+/**
+ * @brief 读取字符串数组参数
+ * @param args 参数对象
+ * @param key 字段名
+ * @return 字符串数组
+ */
+std::vector<std::string> get_string_array_arg(const json& args, const std::string& key) {
+    std::vector<std::string> values;
+    if (!args.contains(key) || args[key].is_null() || !args[key].is_array()) {
+        return values;
+    }
+
+    for (const auto& item : args[key]) {
+        if (item.is_string()) {
+            values.push_back(item.get<std::string>());
+        }
+    }
+    return values;
+}
+
+/**
  * @brief 读取环境变量
  * @param name 环境变量名
  * @return 环境变量值；不存在时返回空字符串
@@ -282,6 +448,50 @@ std::string normalize_collection_name(const std::string& collection) {
         return "default";
     }
     return trimmed;
+}
+
+/**
+ * @brief 生成小写副本
+ * @param text 原始文本
+ * @return 小写化后的结果
+ */
+std::string to_lower_copy(const std::string& text) {
+    std::string lowered = text;
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+        [](unsigned char ch) {
+            return static_cast<char>(std::tolower(ch));
+        });
+    return lowered;
+}
+
+/**
+ * @brief 规范化单个标签
+ * @param tag 原始标签
+ * @return 去空白并转小写后的标签
+ */
+std::string normalize_tag(const std::string& tag) {
+    return to_lower_copy(trim(tag));
+}
+
+/**
+ * @brief 规范化标签列表并去重
+ * @param tags 原始标签列表
+ * @return 清洗后的标签列表
+ */
+std::vector<std::string> normalize_tags(const std::vector<std::string>& tags) {
+    std::vector<std::string> normalized;
+    std::set<std::string> seen;
+
+    for (const auto& tag : tags) {
+        const std::string clean_tag = normalize_tag(tag);
+        if (clean_tag.empty() || seen.count(clean_tag) > 0) {
+            continue;
+        }
+        seen.insert(clean_tag);
+        normalized.push_back(clean_tag);
+    }
+
+    return normalized;
 }
 
 /**
@@ -811,11 +1021,13 @@ public:
             throw std::runtime_error("打开知识库数据库失败: " + error);
         }
 
+        exec_sql("PRAGMA foreign_keys=ON;");
         exec_sql("PRAGMA journal_mode=WAL;");
         exec_sql("PRAGMA synchronous=NORMAL;");
         exec_sql("PRAGMA busy_timeout=3000;");
         initialize_vec_extension();
         ensure_info_table();
+        ensure_document_tables();
     }
 
     /**
@@ -957,6 +1169,7 @@ public:
      * @param query_embedding 查询向量
      * @param collection 集合过滤
      * @param source_path 源文件过滤
+     * @param allowed_documents 允许参与检索的文档集合
      * @param top_k 返回数量
      * @param max_excerpt_chars 片段返回上限
      * @return 检索结果
@@ -964,9 +1177,13 @@ public:
     std::vector<SearchMatch> search(const std::vector<float>& query_embedding,
                                     const std::string& collection,
                                     const std::string& source_path,
+                                    const std::vector<DocumentKey>& allowed_documents,
                                     int top_k,
                                     int max_excerpt_chars) {
         open();
+        if (!table_exists("kb_chunks")) {
+            return {};
+        }
 
         sqlite3_stmt* stmt = nullptr;
         const std::string embedding_json = embedding_to_json(query_embedding);
@@ -986,6 +1203,16 @@ public:
         if (has_source_path) {
             sql += " AND source_path = ?";
         }
+        if (!allowed_documents.empty()) {
+            sql += " AND (";
+            for (size_t index = 0; index < allowed_documents.size(); ++index) {
+                if (index > 0) {
+                    sql += " OR ";
+                }
+                sql += "(collection = ? AND source_path = ?)";
+            }
+            sql += ")";
+        }
         sql += " ORDER BY distance LIMIT ?;";
 
         prepare_statement(sql, &stmt);
@@ -998,6 +1225,10 @@ public:
         }
         if (has_source_path) {
             bind_text(stmt, bind_index++, source_path);
+        }
+        for (const auto& document : allowed_documents) {
+            bind_text(stmt, bind_index++, document.collection);
+            bind_text(stmt, bind_index++, document.source_path);
         }
         bind_int(stmt, bind_index, safe_top_k);
 
@@ -1017,6 +1248,306 @@ public:
 
         finalize_statement(stmt);
         return matches;
+    }
+
+    /**
+     * @brief 写入或刷新文档级元数据记录
+     * @param collection 集合名
+     * @param source_path 源文件路径
+     * @param source_name 文件展示名
+     * @param checksum 文件摘要
+     * @param chunk_count 切片数量
+     */
+    void upsert_document_record(const std::string& collection,
+                                const std::string& source_path,
+                                const std::string& source_name,
+                                const std::string& checksum,
+                                int chunk_count) {
+        open();
+
+        const std::string metadata_json = get_document_metadata_json(collection, source_path)
+            .value_or(json{{"tags", json::array()}}.dump());
+        const std::string updated_at = now_iso8601();
+
+        sqlite3_stmt* stmt = nullptr;
+        prepare_statement(
+            "INSERT INTO kb_documents("
+            "collection, source_path, source_name, checksum, chunk_count, metadata_json, updated_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(collection, source_path) DO UPDATE SET "
+            "source_name = excluded.source_name, "
+            "checksum = excluded.checksum, "
+            "chunk_count = excluded.chunk_count, "
+            "metadata_json = excluded.metadata_json, "
+            "updated_at = excluded.updated_at;",
+            &stmt);
+        bind_text(stmt, 1, collection);
+        bind_text(stmt, 2, source_path);
+        bind_text(stmt, 3, source_name);
+        bind_text(stmt, 4, checksum);
+        bind_int(stmt, 5, chunk_count);
+        bind_text(stmt, 6, metadata_json);
+        bind_text(stmt, 7, updated_at);
+        step_done(stmt, "写入文档元信息");
+        finalize_statement(stmt);
+    }
+
+    /**
+     * @brief 更新文档标签与补充元数据
+     * @param collection 集合名
+     * @param source_path 源文件路径
+     * @param tags 标签列表
+     * @param metadata 补充元数据
+     * @param merge 是否合并已有元数据
+     * @return 更新后的结构化结果
+     */
+    json update_document_metadata(const std::string& collection,
+                                  const std::string& source_path,
+                                  const std::vector<std::string>& tags,
+                                  const json& metadata,
+                                  bool merge) {
+        open();
+
+        const auto stored_metadata_json = get_document_metadata_json(collection, source_path);
+        if (!stored_metadata_json.has_value()) {
+            throw std::runtime_error(
+                "未找到文档记录，请先入库后再更新元数据: " + source_path);
+        }
+
+        json current_metadata = json::parse(
+            stored_metadata_json.value(),
+            nullptr,
+            false);
+        if (current_metadata.is_discarded() || !current_metadata.is_object()) {
+            current_metadata = json::object();
+        }
+
+        std::vector<std::string> effective_tags = merge
+            ? get_document_tags(collection, source_path)
+            : std::vector<std::string>();
+        for (const auto& tag : normalize_tags(tags)) {
+            if (std::find(effective_tags.begin(), effective_tags.end(), tag) == effective_tags.end()) {
+                effective_tags.push_back(tag);
+            }
+        }
+
+        json effective_metadata = merge ? current_metadata : json::object();
+        if (metadata.is_object()) {
+            for (auto it = metadata.begin(); it != metadata.end(); ++it) {
+                effective_metadata[it.key()] = it.value();
+            }
+        }
+        effective_metadata["tags"] = effective_tags;
+
+        const std::string updated_at = now_iso8601();
+
+        sqlite3_stmt* update_stmt = nullptr;
+        prepare_statement(
+            "UPDATE kb_documents "
+            "SET metadata_json = ?, updated_at = ? "
+            "WHERE collection = ? AND source_path = ?;",
+            &update_stmt);
+        bind_text(update_stmt, 1, effective_metadata.dump());
+        bind_text(update_stmt, 2, updated_at);
+        bind_text(update_stmt, 3, collection);
+        bind_text(update_stmt, 4, source_path);
+        step_done(update_stmt, "更新文档元数据");
+        finalize_statement(update_stmt);
+
+        sqlite3_stmt* delete_stmt = nullptr;
+        prepare_statement(
+            "DELETE FROM kb_document_tags WHERE collection = ? AND source_path = ?;",
+            &delete_stmt);
+        bind_text(delete_stmt, 1, collection);
+        bind_text(delete_stmt, 2, source_path);
+        step_done(delete_stmt, "删除旧标签");
+        finalize_statement(delete_stmt);
+
+        sqlite3_stmt* insert_stmt = nullptr;
+        prepare_statement(
+            "INSERT INTO kb_document_tags(collection, source_path, tag, updated_at) "
+            "VALUES (?, ?, ?, ?);",
+            &insert_stmt);
+        for (const auto& tag : effective_tags) {
+            sqlite3_reset(insert_stmt);
+            sqlite3_clear_bindings(insert_stmt);
+            bind_text(insert_stmt, 1, collection);
+            bind_text(insert_stmt, 2, source_path);
+            bind_text(insert_stmt, 3, tag);
+            bind_text(insert_stmt, 4, updated_at);
+            step_done(insert_stmt, "写入文档标签");
+        }
+        finalize_statement(insert_stmt);
+
+        json result;
+        result["collection"] = collection;
+        result["source_path"] = source_path;
+        result["tags"] = effective_tags;
+        result["metadata"] = effective_metadata;
+        result["updated_at"] = updated_at;
+        return result;
+    }
+
+    /**
+     * @brief 获取知识库统计信息
+     * @param collection 集合过滤
+     * @return 文档数、chunk 数和最近更新时间
+     */
+    json get_stats(const std::string& collection) {
+        open();
+
+        const bool has_collection = !trim(collection).empty();
+        sqlite3_stmt* doc_stmt = nullptr;
+        std::string doc_sql = "SELECT COUNT(*) FROM kb_documents";
+        if (has_collection) {
+            doc_sql += " WHERE collection = ?;";
+        } else {
+            doc_sql += ";";
+        }
+        prepare_statement(doc_sql, &doc_stmt);
+        if (has_collection) {
+            bind_text(doc_stmt, 1, collection);
+        }
+        int document_count = 0;
+        if (sqlite3_step(doc_stmt) == SQLITE_ROW) {
+            document_count = sqlite3_column_int(doc_stmt, 0);
+        }
+        finalize_statement(doc_stmt);
+
+        int chunk_count = 0;
+        if (table_exists("kb_chunks")) {
+            sqlite3_stmt* chunk_stmt = nullptr;
+            std::string chunk_sql = "SELECT COUNT(*) FROM kb_chunks";
+            if (has_collection) {
+                chunk_sql += " WHERE collection = ?;";
+            } else {
+                chunk_sql += ";";
+            }
+            prepare_statement(chunk_sql, &chunk_stmt);
+            if (has_collection) {
+                bind_text(chunk_stmt, 1, collection);
+            }
+            if (sqlite3_step(chunk_stmt) == SQLITE_ROW) {
+                chunk_count = sqlite3_column_int(chunk_stmt, 0);
+            }
+            finalize_statement(chunk_stmt);
+        }
+
+        sqlite3_stmt* updated_stmt = nullptr;
+        std::string updated_sql = "SELECT MAX(updated_at) FROM kb_documents";
+        if (has_collection) {
+            updated_sql += " WHERE collection = ?;";
+        } else {
+            updated_sql += ";";
+        }
+        prepare_statement(updated_sql, &updated_stmt);
+        if (has_collection) {
+            bind_text(updated_stmt, 1, collection);
+        }
+        std::string latest_updated_at;
+        if (sqlite3_step(updated_stmt) == SQLITE_ROW) {
+            latest_updated_at = column_text(updated_stmt, 0);
+        }
+        finalize_statement(updated_stmt);
+
+        return {
+            {"collection", collection},
+            {"document_count", document_count},
+            {"chunk_count", chunk_count},
+            {"latest_updated_at", latest_updated_at}
+        };
+    }
+
+    /**
+     * @brief 根据标签条件筛选文档
+     * @param tags 标签列表
+     * @param match_mode 标签匹配模式
+     * @param collection 集合过滤
+     * @param source_path 源文件过滤
+     * @return 满足条件的文档主键列表
+     */
+    std::vector<DocumentKey> find_documents_by_tags(const std::vector<std::string>& tags,
+                                                    const std::string& match_mode,
+                                                    const std::string& collection,
+                                                    const std::string& source_path) {
+        open();
+
+        const std::vector<std::string> normalized_tags = normalize_tags(tags);
+        const bool has_collection = !trim(collection).empty();
+        const bool has_source_path = !trim(source_path).empty();
+        const std::string safe_match_mode = trim(match_mode).empty()
+            ? "all"
+            : to_lower_copy(trim(match_mode));
+        if (safe_match_mode != "all" && safe_match_mode != "any") {
+            throw std::runtime_error("match_mode 只支持 all 或 any");
+        }
+
+        sqlite3_stmt* stmt = nullptr;
+        std::string sql;
+        if (normalized_tags.empty()) {
+            sql =
+                "SELECT collection, source_path "
+                "FROM kb_documents "
+                "WHERE 1 = 1";
+            if (has_collection) {
+                sql += " AND collection = ?";
+            }
+            if (has_source_path) {
+                sql += " AND source_path = ?";
+            }
+            sql += " ORDER BY updated_at DESC;";
+        } else {
+            sql =
+                "SELECT d.collection, d.source_path "
+                "FROM kb_documents d "
+                "JOIN kb_document_tags t "
+                "ON d.collection = t.collection AND d.source_path = t.source_path "
+                "WHERE t.tag IN (";
+            for (size_t index = 0; index < normalized_tags.size(); ++index) {
+                if (index > 0) {
+                    sql += ", ";
+                }
+                sql += "?";
+            }
+            sql += ")";
+            if (has_collection) {
+                sql += " AND d.collection = ?";
+            }
+            if (has_source_path) {
+                sql += " AND d.source_path = ?";
+            }
+            sql += " GROUP BY d.collection, d.source_path";
+            if (safe_match_mode == "all") {
+                sql += " HAVING COUNT(DISTINCT t.tag) = ?";
+            }
+            sql += " ORDER BY MAX(d.updated_at) DESC;";
+        }
+
+        prepare_statement(sql, &stmt);
+
+        int bind_index = 1;
+        for (const auto& tag : normalized_tags) {
+            bind_text(stmt, bind_index++, tag);
+        }
+        if (has_collection) {
+            bind_text(stmt, bind_index++, collection);
+        }
+        if (has_source_path) {
+            bind_text(stmt, bind_index++, source_path);
+        }
+        if (!normalized_tags.empty() && safe_match_mode == "all") {
+            bind_int(stmt, bind_index, static_cast<int>(normalized_tags.size()));
+        }
+
+        std::vector<DocumentKey> documents;
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            documents.push_back({
+                column_text(stmt, 0),
+                column_text(stmt, 1)
+            });
+        }
+        finalize_statement(stmt);
+        return documents;
     }
 
     /**
@@ -1055,6 +1586,39 @@ private:
     }
 
     /**
+     * @brief 确保文档元数据和标签表存在
+     */
+    void ensure_document_tables() {
+        exec_sql(
+            "CREATE TABLE IF NOT EXISTS kb_documents ("
+            "collection TEXT NOT NULL,"
+            "source_path TEXT NOT NULL,"
+            "source_name TEXT NOT NULL,"
+            "checksum TEXT NOT NULL,"
+            "chunk_count INTEGER NOT NULL DEFAULT 0,"
+            "metadata_json TEXT NOT NULL DEFAULT '{}',"
+            "updated_at TEXT NOT NULL,"
+            "PRIMARY KEY(collection, source_path)"
+            ");");
+        exec_sql(
+            "CREATE TABLE IF NOT EXISTS kb_document_tags ("
+            "collection TEXT NOT NULL,"
+            "source_path TEXT NOT NULL,"
+            "tag TEXT NOT NULL,"
+            "updated_at TEXT NOT NULL,"
+            "PRIMARY KEY(collection, source_path, tag),"
+            "FOREIGN KEY(collection, source_path) REFERENCES "
+            "kb_documents(collection, source_path) ON DELETE CASCADE"
+            ");");
+        exec_sql(
+            "CREATE INDEX IF NOT EXISTS idx_kb_document_tags_tag "
+            "ON kb_document_tags(tag, collection);");
+        exec_sql(
+            "CREATE INDEX IF NOT EXISTS idx_kb_documents_updated_at "
+            "ON kb_documents(updated_at);");
+    }
+
+    /**
      * @brief 查询知识库元信息
      * @param key 元信息键
      * @return 查询结果
@@ -1074,6 +1638,54 @@ private:
     }
 
     /**
+     * @brief 查询文档元数据 JSON
+     * @param collection 集合名
+     * @param source_path 源文件路径
+     * @return 元数据 JSON 文本
+     */
+    std::optional<std::string> get_document_metadata_json(const std::string& collection,
+                                                          const std::string& source_path) {
+        sqlite3_stmt* stmt = nullptr;
+        prepare_statement(
+            "SELECT metadata_json FROM kb_documents WHERE collection = ? AND source_path = ?;",
+            &stmt);
+        bind_text(stmt, 1, collection);
+        bind_text(stmt, 2, source_path);
+
+        std::optional<std::string> result;
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            result = column_text(stmt, 0);
+        }
+        finalize_statement(stmt);
+        return result;
+    }
+
+    /**
+     * @brief 查询文档标签列表
+     * @param collection 集合名
+     * @param source_path 源文件路径
+     * @return 标签列表
+     */
+    std::vector<std::string> get_document_tags(const std::string& collection,
+                                               const std::string& source_path) {
+        sqlite3_stmt* stmt = nullptr;
+        prepare_statement(
+            "SELECT tag FROM kb_document_tags "
+            "WHERE collection = ? AND source_path = ? "
+            "ORDER BY tag ASC;",
+            &stmt);
+        bind_text(stmt, 1, collection);
+        bind_text(stmt, 2, source_path);
+
+        std::vector<std::string> tags;
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            tags.push_back(column_text(stmt, 0));
+        }
+        finalize_statement(stmt);
+        return tags;
+    }
+
+    /**
      * @brief 写入知识库元信息
      * @param key 元信息键
      * @param value 元信息值
@@ -1088,6 +1700,23 @@ private:
         bind_text(stmt, 2, value);
         step_done(stmt, "写入知识库元信息");
         finalize_statement(stmt);
+    }
+
+    /**
+     * @brief 检查表是否存在
+     * @param table_name 表名
+     * @return true 表示存在
+     */
+    bool table_exists(const std::string& table_name) {
+        sqlite3_stmt* stmt = nullptr;
+        prepare_statement(
+            "SELECT 1 FROM sqlite_master WHERE name = ? LIMIT 1;",
+            &stmt);
+        bind_text(stmt, 1, table_name);
+
+        const bool exists = sqlite3_step(stmt) == SQLITE_ROW;
+        finalize_statement(stmt);
+        return exists;
     }
 
     /**
@@ -1224,6 +1853,11 @@ std::string handle_ingest_knowledge_file(const json& args) {
                                  checksum,
                                  chunks,
                                  embeddings);
+    knowledge_base.upsert_document_record(collection,
+                                          source_path.string(),
+                                          source_path.filename().string(),
+                                          checksum,
+                                          static_cast<int>(chunks.size()));
 
     json result;
     result["success"] = true;
@@ -1277,6 +1911,7 @@ std::string handle_search_knowledge_base(const json& args) {
         query_embedding,
         collection == "default" ? "" : collection,
         source_path_filter.empty() ? "" : normalize_path(source_path_filter).string(),
+        {},
         top_k,
         max_excerpt_chars);
 
@@ -1294,6 +1929,142 @@ std::string handle_search_knowledge_base(const json& args) {
     result["match_count"] = matches.size();
     result["matches"] = json::array();
 
+    for (const auto& match : matches) {
+        result["matches"].push_back({
+            {"chunk_id", match.chunk_id},
+            {"collection", match.collection},
+            {"source_path", match.source_path},
+            {"source_name", match.source_name},
+            {"chunk_index", match.chunk_index},
+            {"distance", match.distance},
+            {"content", match.chunk_text}
+        });
+    }
+
+    return result.dump();
+}
+
+/**
+ * @brief 处理知识库统计查询
+ * @param args 工具参数
+ * @return JSON 文本结果
+ */
+std::string handle_get_knowledge_stats(const json& args) {
+    const std::string collection = normalize_collection_name(
+        get_string_arg(args, "collection", ""));
+    const std::filesystem::path db_path = normalize_db_path(
+        get_string_arg(args, "db_path", ""));
+
+    SQLiteVecKnowledgeBase knowledge_base(db_path);
+    json result = knowledge_base.get_stats(collection == "default" ? "" : collection);
+    result["success"] = true;
+    result["action"] = "stats";
+    result["db_path"] = knowledge_base.db_path();
+    result["observed_at"] = now_iso8601();
+    return result.dump();
+}
+
+/**
+ * @brief 处理文档元数据更新
+ * @param args 工具参数
+ * @return JSON 文本结果
+ */
+std::string handle_update_knowledge_metadata(const json& args) {
+    const std::string collection = normalize_collection_name(
+        get_string_arg(args, "collection", ""));
+    const std::filesystem::path source_path = normalize_path(
+        get_string_arg(args, "source_path", ""));
+    const std::filesystem::path db_path = normalize_db_path(
+        get_string_arg(args, "db_path", ""));
+    const std::vector<std::string> tags = get_string_array_arg(args, "tags");
+    const json metadata = get_object_arg(args, "metadata");
+    const bool merge = get_bool_arg(args, "merge", true);
+
+    SQLiteVecKnowledgeBase knowledge_base(db_path);
+    json updated = knowledge_base.update_document_metadata(collection,
+                                                           source_path.string(),
+                                                           tags,
+                                                           metadata,
+                                                           merge);
+
+    updated["success"] = true;
+    updated["action"] = "update_metadata";
+    updated["db_path"] = knowledge_base.db_path();
+    updated["merge"] = merge;
+    return updated.dump();
+}
+
+/**
+ * @brief 处理按元数据过滤后的知识库检索
+ * @param args 工具参数
+ * @return JSON 文本结果
+ */
+std::string handle_search_by_metadata(const json& args) {
+    const std::string query = trim(get_string_arg(args, "query", ""));
+    if (query.empty()) {
+        throw std::runtime_error("query 不能为空");
+    }
+
+    const std::vector<std::string> tags = normalize_tags(get_string_array_arg(args, "tags"));
+    const std::string match_mode = to_lower_copy(trim(get_string_arg(args, "match_mode", "all")));
+    const std::string collection = normalize_collection_name(
+        get_string_arg(args, "collection", ""));
+    const std::string source_path_filter = trim(get_string_arg(args, "source_path", ""));
+    const std::filesystem::path db_path = normalize_db_path(
+        get_string_arg(args, "db_path", ""));
+    const int top_k = get_int_arg(args, "top_k", kDefaultTopK);
+    const int max_excerpt_chars = get_int_arg(
+        args, "max_excerpt_chars", kDefaultExcerptChars);
+
+    SQLiteVecKnowledgeBase knowledge_base(db_path);
+    const std::string normalized_source_path = source_path_filter.empty()
+        ? ""
+        : normalize_path(source_path_filter).string();
+    const std::vector<DocumentKey> allowed_documents = knowledge_base.find_documents_by_tags(
+        tags,
+        match_mode,
+        collection == "default" ? "" : collection,
+        normalized_source_path);
+
+    json result;
+    result["success"] = true;
+    result["action"] = "search_by_metadata";
+    result["query"] = query;
+    result["tags"] = tags;
+    result["match_mode"] = match_mode.empty() ? "all" : match_mode;
+    result["collection"] = collection == "default" ? "" : collection;
+    result["source_path_filter"] = normalized_source_path;
+    result["db_path"] = knowledge_base.db_path();
+    result["filtered_document_count"] = allowed_documents.size();
+
+    if (allowed_documents.empty()) {
+        result["match_count"] = 0;
+        result["matches"] = json::array();
+        return result.dump();
+    }
+
+    const std::string api_key = get_string_arg(
+        args, "dashscope_api_key", get_env_or_empty("DASHSCOPE_API_KEY"));
+    const std::string model = get_string_arg(
+        args, "embedding_model", get_env_or_empty("KNOWLEDGE_BASE_EMBEDDING_MODEL"));
+    DashScopeEmbeddingClient embedding_client(api_key, model);
+    const std::vector<float> query_embedding = embedding_client.embed_query(query);
+
+    knowledge_base.ensure_schema(static_cast<int>(query_embedding.size()),
+                                 embedding_client.model());
+
+    const std::vector<SearchMatch> matches = knowledge_base.search(
+        query_embedding,
+        collection == "default" ? "" : collection,
+        normalized_source_path,
+        allowed_documents,
+        top_k,
+        max_excerpt_chars);
+
+    result["embedding_model"] = embedding_client.model();
+    result["embedding_dimension"] = query_embedding.size();
+    result["match_count"] = matches.size();
+    result["matches"] = json::array();
     for (const auto& match : matches) {
         result["matches"].push_back({
             {"chunk_id", match.chunk_id},
@@ -1339,6 +2110,16 @@ char* HandleRequestImpl(const char* req) {
         }
         if (tool_name == "search_knowledge_base") {
             return make_response(make_text_result(handle_search_knowledge_base(arguments), false));
+        }
+        if (tool_name == "get_knowledge_stats") {
+            return make_response(make_text_result(handle_get_knowledge_stats(arguments), false));
+        }
+        if (tool_name == "update_knowledge_metadata") {
+            return make_response(make_text_result(
+                handle_update_knowledge_metadata(arguments), false));
+        }
+        if (tool_name == "search_by_metadata") {
+            return make_response(make_text_result(handle_search_by_metadata(arguments), false));
         }
 
         return make_response(make_text_result("未知工具: " + tool_name, true));
