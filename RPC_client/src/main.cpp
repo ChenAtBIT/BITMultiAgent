@@ -19,6 +19,8 @@
 #include <cstdlib>
 #include <cctype>
 #include <vector>
+#include <thread>
+#include <chrono>
 
 using namespace agent_rpc::client;
 using namespace agent_rpc::common;
@@ -292,6 +294,7 @@ int main(int argc, char* argv[]) {
     
     std::cout << "连接成功!" << std::endl;
     std::cout << "流式模式: " << (stream_mode ? "开启" : "关闭") << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(1));
     promptForContextSwitchIfDefault(context_id);
     std::cout << "上下文 ID: " << context_id << std::endl;
     printHelp();

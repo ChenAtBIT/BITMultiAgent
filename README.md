@@ -128,7 +128,7 @@ agent-communication/
 │  │                      Orchestrator Agent                              │   │
 │  │                 (ai_orchestrator, 端口 5000)                         │   │
 │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                  │   │
-│  │  │ 意图识别     │  │ Agent 路由  │  │ MCP 工具    │                  │   │
+│  │  │ 意图识别     │  │ Agent 路由  │  │ 上下文管理   │                  │   │
 │  │  │ (Qwen API)  │  │             │  │             │                  │   │
 │  │  └─────────────┘  └──────┬──────┘  └─────────────┘                  │   │
 │  └──────────────────────────┼──────────────────────────────────────────┘   │
@@ -136,10 +136,10 @@ agent-communication/
 │            ┌────────────────┼────────────────┐                             │
 │            ▼                ▼                ▼                             │
 │  ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐              │
-│  │   math Agent    │ │   知识库 Agent   │ │    纪要 Agent   │              │
-│  │                 │ │    (可扩展)      │ │    (可扩展)     │              │
-│  │   端口 5001     │ │                 │ │                 │              │
-│  │  + MCP Tools    │ │  + MCP Tools    │ │  + MCP Tools    │              │
+│  │   Math Agent    │ │  General Agent  │ │   知识库 Agent   │              │
+│  │                 │ │                 │ │    (可扩展)      │              │
+│  │   端口 5001     │ │   端口 5002     │ │                 │              │
+│  │  + MCP Tools    │ │  无工具直答     │ │  + MCP Tools    │              │
 │  └─────────────────┘ └─────────────────┘ └─────────────────┘              │
 │                                                                            │
 │  ┌─────────────────────────────────────────────────────────────────────┐  │
@@ -152,13 +152,13 @@ agent-communication/
 ### 数据流向
 
 ```
-1. 用户输入 "1+7"
+1. 用户输入 "1+7" 或 "什么是人工智能"
 2. rpc_client → gRPC → rpc_server (端口 50051)
 3. rpc_server → A2A Adapter → Orchestrator (端口 5000)
-4. Orchestrator 识别意图为 "math"
-5. Orchestrator → Math Agent (端口 5001)
-6. Math Agent 调用 MCP calculator 工具
-7. 返回结果 "1+7 = 8"
+4. Orchestrator 识别意图为 "math" / "general"
+5. math 请求：Orchestrator → Math Agent (端口 5001)
+6. Math Agent 调用 MCP calculator 工具并返回结果 "1+7 = 8"
+7. general 请求：Orchestrator → General Agent (端口 5002)，直接基于上下文回答
 8. 响应原路返回给用户
 ```
 
@@ -230,6 +230,7 @@ ls -la build/RPC_client/rpc_client
 ls -la build/mcp_client/libagent_rpc_mcp.a
 ls -la build/examples/ai_orchestrator/ai_orchestrator
 ls -la build/examples/ai_orchestrator/ai_math_agent
+ls -la build/examples/ai_orchestrator/ai_general_agent
 ls -la build/examples/ai_orchestrator/ai_registry_server
 ls -la build/mcp_server/mcp_server
 ```
@@ -239,9 +240,10 @@ ls -la build/mcp_server/mcp_server
 ## 快速启动（完整功能版）
 
 本快速启动将启动项目的**所有功能**，包括：
-- ✅ 多 Agent 协作系统 (Registry + Orchestrator + Math Agent)
+- ✅ 多 Agent 协作系统 (Registry + Orchestrator + Math Agent + General Agent)
 - ✅ MCP 工具调用 (calculator, add, subtract, multiply, divide, power, sqrt, factorial)
 - ✅ RAG-MCP 智能工具选择 (基于向量相似度动态检索相关工具，而非一次性提供所有工具给 LLM)
+- ✅ 通用问答 Agent (General Agent，处理 general 场景，直接回答且不调用工具)
 - ✅ gRPC 通信 (RPC Server + RPC Client)
 - ✅ A2A 协议通信
 - ✅ Redis 任务状态存储
@@ -280,8 +282,10 @@ redis-cli ping  # 应返回 PONG
 
 ```bash
 # 启动多 Agent 系统（包含 MCP 工具 + RAG 智能工具选择）
-# 这将启动: Registry Server (8500) + Math Agent (5001) + Orchestrator (5000)
+# 这将启动: Registry Server (8500) + Math Agent (5001) + General Agent (5002) + Orchestrator (5000)
+# 通过显式覆盖端口，使其与 RPC Server 默认连接配置保持一致
 # RAG 会自动将工具描述向量化，查询时动态检索最相关的工具
+REGISTRY_PORT=8500 ORCHESTRATOR_PORT=5000 MATH_AGENT_PORT=5001 GENERAL_AGENT_PORT=5002 \
 ENABLE_MCP=true ENABLE_RAG=true ./examples/ai_orchestrator/start_system.sh
 ```
 
@@ -290,7 +294,7 @@ ENABLE_MCP=true ENABLE_RAG=true ./examples/ai_orchestrator/start_system.sh
 ==========================================
 AI Agent 系统启动
 ==========================================
-[1/3] 启动 Registry Server...
+[1/4] 启动 Registry Server...
 Registry Server 启动完成 (端口: 8500)
 MCP 已启用: /path/to/mcp_server
 MCP 插件目录: /path/to/plugins
@@ -298,9 +302,11 @@ MCP 日志目录: /path/to/logs
 RAG-MCP 已启用: 智能工具选择
   Top-K: 5
   相似度阈值: 0.3
-[2/3] 启动 Math Agent...
+[2/4] 启动 Math Agent...
 Math Agent 启动完成 (端口: 5001)
-[3/3] 启动 Orchestrator...
+[3/4] 启动 General Agent...
+General Agent 启动完成 (端口: 5002)
+[4/4] 启动 Orchestrator...
 Orchestrator 启动完成 (端口: 5000)
 
 ==========================================
@@ -355,6 +361,10 @@ AI: 2^10 = 1024
 [default/流式] > 什么是人工智能
 AI: 人工智能是...（逐字输出）
 
+# 通用问答（路由到 General Agent，不调用 MCP 工具）
+[default] > 如何提高会议纪要整理效率
+AI: 可以从模板标准化、关键信息提取、任务项拆分和会后回顾机制四个方面入手...
+
 # 查看连接状态
 [default] > /status
 连接状态: 已连接
@@ -375,6 +385,7 @@ AI: 人工智能是...（逐字输出）
 pkill -f rpc_server
 pkill -f ai_orchestrator
 pkill -f ai_math_agent
+pkill -f ai_general_agent
 pkill -f ai_registry_server
 ```
 
@@ -391,13 +402,13 @@ grep -E "MCP|RAG" build/runtime/examples/ai_orchestrator/logs/math_agent.log
 # [INFO ] RAG-MCP initialized successfully
 # [INFO ] Indexing 12 tools for RAG retrieval
 
-# 查看 Orchestrator 日志
-grep -E "MCP|RAG" build/runtime/examples/ai_orchestrator/logs/orchestrator.log
+# 查看 General Agent 日志（应正常启动，但不会初始化 MCP）
+grep -E "General Agent|初始化完成|已注册到服务中心" build/runtime/examples/ai_orchestrator/logs/general_agent.log
 
 # 预期输出:
-# [Orchestrator] MCP 已启用，可用工具: calculator add subtract multiply divide power sqrt factorial
-# [INFO ] RAG-MCP initialized successfully
-# [INFO ] Indexing 12 tools for RAG retrieval
+# [General Agent] 初始化完成
+# [General Agent] 启动在端口 5002
+# [General Agent] 已注册到服务中心
 ```
 
 ### RAG 智能工具选择工作原理
@@ -484,9 +495,15 @@ export DASHSCOPE_API_KEY=sk-your-dashscope-api-key  # 用于 RAG 智能工具选
 # 启动 Redis
 sudo systemctl start redis-server
 redis-cli ping  # 应返回 PONG
+```
 
-# 确保 MCP Server 已编译
-ls build/mcp_server/mcp_server
+```bash
+# 配置并全量编译
+cmake -S . -B build
+cmake --build build -j$(nproc)
+
+# 单独编译
+cmake --build build --target ai_orchestrator -j$(nproc) 
 ```
 
 ### 步骤 2: 启动 Registry Server
@@ -532,10 +549,31 @@ ls build/mcp_server/mcp_server
 # [MathAgent] 已注册到服务中心
 ```
 
-### 步骤 4: 启动 Orchestrator（含 MCP 工具 + RAG）
+### 步骤 4: 启动 General Agent（通用问答，不调用工具）
 
 ```bash
-# 终端 3: Orchestrator (协调器 + MCP 工具 + RAG 智能工具选择)
+# 终端 3: General Agent (通用问答专用 Agent，不初始化 MCP 工具)
+# Agent_communication/examples/ai_orchestrator/general_agent_main.cpp
+./build/examples/ai_orchestrator/ai_general_agent \
+    general-1 \
+    5002 \
+    http://localhost:8500 \
+    $QWEN_API_KEY \
+    --redis-host 127.0.0.1 \
+    --redis-port 6379
+
+# 输出:
+# [RedisTaskStore] 连接到 Redis 127.0.0.1:6379
+# [RedisTaskStore] 连接成功
+# [General Agent] 初始化完成
+# [General Agent] 启动在端口 5002
+# [General Agent] 已注册到服务中心
+```
+
+### 步骤 5: 启动 Orchestrator（仅做路由与上下文管理）
+
+```bash
+# 终端 4: Orchestrator (协调器，仅负责意图识别、上下文维护与 Agent 路由)
 # Agent_communication/examples/ai_orchestrator/orchestrator_main.cpp
 ./build/examples/ai_orchestrator/ai_orchestrator \
     orch-1 \
@@ -543,30 +581,20 @@ ls build/mcp_server/mcp_server
     http://localhost:8500 \
     $QWEN_API_KEY \
     --redis-host 127.0.0.1 \
-    --redis-port 6379 \
-    --enable-mcp \
-    --mcp-server $(pwd)/build/mcp_server/mcp_server \
-    --enable-rag \
-    --rag-top-k 5 \
-    --rag-threshold 0.3
+    --redis-port 6379
 
 # 输出:
 # [RedisTaskStore] 连接到 Redis 127.0.0.1:6379
 # [RedisTaskStore] 连接成功
-# [INFO ] MCP client connected to server: .../mcp_server
-# [INFO ] Refreshed 12 MCP tools
-# [Orchestrator] MCP 已启用，可用工具: calculator add subtract multiply divide power sqrt factorial sleep ...
-# [INFO ] RAG-MCP initialized successfully
-# [INFO ] Indexing 12 tools for RAG retrieval
 # [Orchestrator] 初始化完成
 # [Orchestrator] 启动在端口 5000
 # [Orchestrator] 已注册到服务中心
 ```
 
-### 步骤 5: 启动 RPC Server
+### 步骤 6: 启动 RPC Server
 
 ```bash
-# 终端 4: RPC Server (gRPC 服务端)
+# 终端 5: RPC Server (gRPC 服务端)
 ./build/RPC_server/rpc_server
 
 # 输出:
@@ -585,10 +613,10 @@ ls build/mcp_server/mcp_server
 # 超时时间:       60 秒
 ```
 
-### 步骤 6: 启动 RPC Client
+### 步骤 7: 启动 RPC Client
 
 ```bash
-# 终端 5: RPC Client (用户客户端)
+# 终端 6: RPC Client (用户客户端)
 # Agent_communication/RPC_client/src/main.cpp
 ./build/RPC_client/rpc_client
 
@@ -612,7 +640,7 @@ ls build/mcp_server/mcp_server
 # [default] >
 ```
 
-### 步骤 7: 测试完整功能
+### 步骤 8: 测试完整功能
 
 ```bash
 # 在 RPC Client 中测试
@@ -646,6 +674,12 @@ AI: √16 = 4
 [default/流式] > 什么是人工智能
 AI: 人工智能是...（逐字输出）
 
+# === 通用问答（路由到 General Agent）===
+[default] > 如何提高会议纪要整理效率
+思考中...
+AI: 可以从模板标准化、关键信息提取、任务项拆分和会后回顾机制四个方面入手...
+[Agent: general-1, 耗时: 6xxms]
+
 # === 查看状态 ===
 [default] > /status
 连接状态: 已连接
@@ -657,7 +691,7 @@ AI: 人工智能是...（逐字输出）
 再见!
 ```
 
-### 步骤 8: 运行 RAG-MCP 示例
+### 步骤 9: 运行 RAG-MCP 示例
 
 ```bash
 # 单独运行 RAG-MCP 智能工具选择示例
@@ -752,6 +786,7 @@ gRPC 服务端和客户端，提供 AI 查询接口。
 | Registry Server | 8500 | Agent 注册中心，服务发现 |
 | Orchestrator | 5000 | 协调器，意图识别，任务分发 |
 | Math Agent | 5001 | 数学计算专业 Agent |
+| General Agent | 5002 | 通用问答 Agent，处理 general 场景且不调用工具 |
 
 ### 3. MCP 工具
 
@@ -939,8 +974,8 @@ export RAG_THRESHOLD=0.3
 ### Agent 启动参数
 
 ```bash
-# Orchestrator / Math Agent 通用参数
-./ai_orchestrator <agent_id> <port> <registry_url> <api_key> [选项]
+# Math Agent 参数
+./ai_math_agent <agent_id> <port> <registry_url> <api_key> [选项]
 
 选项:
   --redis-host <host>     Redis 主机 (默认: 127.0.0.1)
@@ -953,6 +988,23 @@ export RAG_THRESHOLD=0.3
   --rag-top-k <n>         返回工具数量 (默认: 5)
   --rag-threshold <f>     相似度阈值 (默认: 0.3)
   --rag-model <model>     Embedding 模型 (默认: text-embedding-v2)
+
+# General Agent 参数
+./ai_general_agent <agent_id> <port> <registry_url> <api_key> [选项]
+
+选项:
+  --redis-host <host>     Redis 主机 (默认: 127.0.0.1)
+  --redis-port <port>     Redis 端口 (默认: 6379)
+
+# Orchestrator 参数
+./ai_orchestrator <agent_id> <port> <registry_url> <api_key> [选项]
+
+选项:
+  --redis-host <host>     Redis 主机 (默认: 127.0.0.1)
+  --redis-port <port>     Redis 端口 (默认: 6379)
+  --enable-mcp            兼容保留参数，当前不直接使用
+  --mcp-server <path>     兼容保留参数，当前不直接使用
+  --mcp-args <args>       兼容保留参数，当前不直接使用
 ```
 
 ---
@@ -1063,7 +1115,7 @@ cmake --build build --target mcp_server -j$(nproc)
 ENABLE_MCP=true ./examples/ai_orchestrator/start_system.sh
 
 # 3. 检查日志确认 MCP 初始化
-grep "MCP 已启用" build/runtime/examples/ai_orchestrator/logs/orchestrator.log
+grep "MCP 已启用" build/runtime/examples/ai_orchestrator/logs/math_agent.log
 ```
 
 ### Q: Ctrl+C 无法退出 Client
@@ -1083,7 +1135,7 @@ export DASHSCOPE_API_KEY=sk-your-dashscope-api-key
 ENABLE_MCP=true ENABLE_RAG=true ./examples/ai_orchestrator/start_system.sh
 
 # 4. 检查日志确认 RAG 初始化
-grep "RAG" build/runtime/examples/ai_orchestrator/logs/orchestrator.log
+grep "RAG" build/runtime/examples/ai_orchestrator/logs/math_agent.log
 
 # 预期输出:
 # [INFO ] RAG-MCP initialized successfully

@@ -168,6 +168,26 @@ target_include_directories(test_agent_router_properties PRIVATE
 
 add_test(NAME AgentRouterPropertiesTest COMMAND test_agent_router_properties)
 
+# 分层上下文记忆管理测试
+add_executable(test_context_memory_manager test_context_memory_manager.cpp)
+
+target_link_libraries(test_context_memory_manager
+    orchestrator
+    GTest::gtest
+    GTest::gtest_main
+    pthread
+)
+
+target_include_directories(test_context_memory_manager PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../orchestrator/include
+)
+
+target_compile_definitions(test_context_memory_manager PRIVATE
+    AGENT_RPC_PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
+
+add_test(NAME ContextMemoryManagerTest COMMAND test_context_memory_manager)
+
 # 安装测试
 install(TARGETS test_serialization
     RUNTIME DESTINATION bin

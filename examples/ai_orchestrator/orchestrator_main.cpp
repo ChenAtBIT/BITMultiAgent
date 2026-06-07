@@ -1,13 +1,10 @@
 /**
  * @file orchestrator_main.cpp
  * @brief AI Orchestrator - 调度 AI Agent
- * 
+ *
  * 基于 a2a-cpp/examples/multi_agent_demo/dynamic_orchestrator.cpp
  * 集成到 agent-communication RPC 框架
- * 集成 MCP 工具支持
- * 
- * Requirements: 12.2, 12.3, 12.4
- * Task 19.4: 集成 MCP 到 Orchestrator Agent
+ * 当前职责仅为意图识别、上下文维护和下游 Agent 路由
  */
 
 #include "redis_task_store.hpp"
@@ -25,6 +22,7 @@
 
 // MCP 集成
 #include <agent_rpc/mcp/mcp_agent_integration.h>
+#include <agent_rpc/orchestrator/context_memory_manager.h>
 
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
@@ -95,7 +93,7 @@ public:
  * - 接收用户问题
  * - 使用 AI 模型分析意图
  * - 路由到合适的专业 Agent
- * - 使用 MCP 工具增强能力
+ * - 调用下游专用 Agent 的独立能力
  * - 返回处理结果
  */
 class AIOrchestrator {
@@ -111,29 +109,21 @@ public:
         , listen_address_(listen_address)
         , task_store_(std::make_shared<RedisTaskStore>(redis_host, redis_port))
         , qwen_client_(api_key)
-        , registry_client_(registry_url)
-        , mcp_integration_(std::make_unique<MCPAgentIntegration>()) {
-        
-        // 初始化 MCP 集成
-        if (!mcp_integration_->initialize(mcp_config)) {
-            std::cerr << "[Orchestrator] MCP 初始化失败，将在无 MCP 模式下运行" << std::endl;
-        } else if (mcp_integration_->isAvailable()) {
-            auto tools = mcp_integration_->getToolNames();
-            std::ostringstream tool_list;
-            tool_list << "[Orchestrator] MCP 已启用，可用工具:";
-            for (const auto& tool : tools) {
-                tool_list << " " << tool;
-            }
-            std::cout << tool_list.str() << std::endl;
-        }
+        , context_memory_manager_()
+        , registry_client_(registry_url) {
+        context_memory_manager_.set_llm_compressor(
+            [this](const std::string& system_prompt,
+                   const std::string& user_prompt) {
+                return qwen_client_.chat(system_prompt, user_prompt);
+            });
+
+        // Orchestrator 不再直接执行工具，仅做路由编排。
+        (void)mcp_config;
         
         std::cout << "[Orchestrator] 初始化完成" << std::endl;
     }
     
     ~AIOrchestrator() {
-        if (mcp_integration_) {
-            mcp_integration_->shutdown();
-        }
     }
     
     void start(int port) {
@@ -602,24 +592,73 @@ private:
     }
 
     /**
+     * @brief 将 A2A 消息转换为记忆管理器消息
+     * @param message A2A 消息
+     * @return 记忆管理器消息
+     */
+    static agent_rpc::orchestrator::ContextMemoryMessage to_memory_message(
+        const AgentMessage& message) {
+        std::string role = "assistant";
+        if (message.role() == MessageRole::User) {
+            role = "user";
+        } else if (message.role() == MessageRole::System) {
+            role = "system";
+        }
+
+        std::string text;
+        if (!message.parts().empty()) {
+            auto text_part = dynamic_cast<TextPart*>(message.parts()[0].get());
+            if (text_part) {
+                text = text_part->text();
+            }
+        }
+
+        return {role, text};
+    }
+
+    /**
+     * @brief 读取 Redis 历史并转换为记忆管理器格式
+     * @param context_id 会话上下文 ID
+     * @param max_length 最大读取数量，0 表示全部
+     * @return 转换后的消息列表
+     */
+    std::vector<agent_rpc::orchestrator::ContextMemoryMessage>
+    load_context_memory_history(const std::string& context_id, int max_length) {
+        auto history = task_store_->get_history(context_id, max_length);
+        std::vector<agent_rpc::orchestrator::ContextMemoryMessage> messages;
+        messages.reserve(history.size());
+
+        for (const auto& message : history) {
+            messages.push_back(to_memory_message(message));
+        }
+
+        return messages;
+    }
+
+    /**
+     * @brief 构造分层后的上下文消息
+     * @param context_id 会话上下文 ID
+     * @param limit 最近原始历史读取数量，0 表示全部
+     * @return 长期记忆、短期摘要和工作记忆组成的消息列表
+     */
+    std::vector<agent_rpc::orchestrator::ContextMemoryMessage>
+    build_managed_context_messages(const std::string& context_id, size_t limit) {
+        auto raw_history =
+            load_context_memory_history(context_id, static_cast<int>(limit));
+        return context_memory_manager_.build_context_messages(context_id, raw_history);
+    }
+
+    /**
      * @brief 读取最近几条历史消息并拼成可读文本
      * @param context_id 会话上下文
      * @param limit 最多读取的消息数
      * @return 历史文本
      */
     std::string build_history_text(const std::string& context_id, size_t limit) {
-        auto history = task_store_->get_history(context_id, limit);
+        auto history = build_managed_context_messages(context_id, limit);
         std::string history_text;
         for (const auto& msg : history) {
-            std::string role_str = to_string(msg.role());
-            std::string text;
-            if (!msg.parts().empty()) {
-                auto text_part = dynamic_cast<TextPart*>(msg.parts()[0].get());
-                if (text_part) {
-                    text = text_part->text();
-                }
-            }
-            history_text += role_str + ": " + text + "\n";
+            history_text += msg.role + ": " + msg.content + "\n";
         }
         return history_text;
     }
@@ -655,8 +694,8 @@ private:
                 
                 std::cout << "[Orchestrator] 收到消息: " << user_text << std::endl;
                 
-                // 保存用户消息
-                //save_message(context_id, message);
+                // 保存用户消息并刷新分层记忆。
+                save_message(context_id, message);
                 
                 // 识别意图
                 std::string intent = analyze_intent(user_text);
@@ -672,8 +711,8 @@ private:
                     // 动态查找 Code Agent
                     response_text = call_code_agent(user_text, context_id);
                 } else {
-                    // 通用对话
-                    response_text = handle_general_query(user_text, context_id);
+                    // 通用对话由专用 General Agent 处理。
+                    response_text = call_general_agent(user_text, context_id);
                 }
                 
                 // 无论回复来自哪个下游 Agent，都统一写回 orchestrator 的会话历史。
@@ -681,7 +720,7 @@ private:
                     .with_role(MessageRole::Agent)
                     .with_context_id(context_id);
                 response_msg.add_text_part(response_text);
-                //save_message(context_id, response_msg);
+                save_message(context_id, response_msg);
                 
                 // 返回响应
                 auto response = JsonRpcResponse::create_success(request.id(), response_msg.to_json());
@@ -746,8 +785,8 @@ private:
             
             std::cout << "[Orchestrator] 收到流式消息: " << user_text << std::endl;
             
-            // 保存用户消息
-            //save_message(context_id, message);
+            // 保存用户消息并刷新分层记忆。
+            save_message(context_id, message);
             
             // 先发送开始事件，让客户端知道当前请求已进入流式处理阶段。
             json start_event = {
@@ -777,14 +816,13 @@ private:
             
             // 处理查询并流式返回
             std::string response_text;
-            
             if (intent == "math") {
                 // 数学请求改写和工具调用都由 Math Agent 自主完成，编排器只负责路由。
                 response_text = call_math_agent(user_text, context_id);
             } else if (intent == "code") {
                 response_text = call_code_agent(user_text, context_id);
             } else {
-                response_text = handle_general_query(user_text, context_id);
+                response_text = call_general_agent(user_text, context_id);
             }
             
             // UTF-8 安全分块，避免中文等多字节字符被切成非法片段。
@@ -840,7 +878,7 @@ private:
                 .with_role(MessageRole::Agent)
                 .with_context_id(context_id);
             response_msg.add_text_part(response_text);
-            //save_message(context_id, response_msg);
+            save_message(context_id, response_msg);
             
             // 发送完成事件
             json complete_event = {
@@ -923,9 +961,14 @@ private:
     std::string call_code_agent(const std::string& query, const std::string& context_id) {
         return call_agent_by_tag("code", query, context_id);
     }
+
+    std::string call_general_agent(const std::string& query,
+                                  const std::string& context_id) {
+        return call_agent_by_tag("general", query, context_id);
+    }
     
     /**
-     * @brief 按标签查找并调用下游专业 Agent
+     * @brief 按标签查找并调用下游 Agent
      * @param tag 目标 Agent 标签，例如 math 或 code
      * @param query 用户问题
      * @param context_id 当前会话上下文
@@ -973,176 +1016,9 @@ private:
             
         } catch (const std::exception& e) {
             std::cerr << "[Orchestrator] 调用 " << tag << " Agent 失败: " << e.what() << std::endl;
-            // 下游专业服务不可用时，显式告知客户端当前发生了降级。
-            return "抱歉，" + tag + " 服务暂时不可用，使用通用模型回答";
+            // 下游服务不可用时，直接返回可读降级提示。
+            return "抱歉，" + tag + " 服务暂时不可用，请稍后再试。";
         }
-    }
-    
-    /**
-     * @brief 构造通用问答使用的系统提示词
-     * @param context_id 当前会话上下文
-     * @return 拼接好历史信息的系统提示词
-     */
-    std::string build_general_system_prompt(const std::string& context_id) {
-        std::string system_prompt =
-            "你是一个严谨、友好的中文助手。"
-            "当提供的工具能帮助你获得更准确的事实时，请主动调用工具；"
-            "如果不需要工具，就直接回答用户。"
-            "拿到工具结果后，请基于工具返回内容给出最终答复。";
-
-        const std::string history_text = build_history_text(context_id, 5);
-        if (!history_text.empty()) {
-            system_prompt += "\n\n最近对话历史：\n" + history_text;
-        }
-
-        return system_prompt;
-    }
-
-    /**
-     * @brief 将 MCP 工具转换为通义千问 tools 定义
-     * @param query 用户当前问题
-     * @return 提供给模型的工具定义列表
-     */
-    std::vector<QwenToolDefinition> build_mcp_tool_definitions(const std::string& query) {
-        std::vector<QwenToolDefinition> tool_definitions;
-        if (!mcp_integration_ || !mcp_integration_->isAvailable()) {
-            return tool_definitions;
-        }
-
-        const auto relevant_tools = mcp_integration_->getRelevantTools(query);
-        tool_definitions.reserve(relevant_tools.size());
-
-        for (const auto& tool : relevant_tools) {
-            tool_definitions.push_back({
-                tool.name,
-                tool.description,
-                tool.input_schema
-            });
-        }
-
-        return tool_definitions;
-    }
-
-    /**
-     * @brief 构造统一的工具错误结果
-     * @param tool_name 工具名称
-     * @param error_message 错误信息
-     * @return 可直接回填给模型的 JSON 文本
-     */
-    static std::string build_tool_error_payload(const std::string& tool_name,
-                                                const std::string& error_message) {
-        json payload = {
-            {"tool", tool_name},
-            {"success", false},
-            {"error", error_message}
-        };
-        return payload.dump();
-    }
-
-    /**
-     * @brief 执行模型请求的单次工具调用
-     * @param tool_call 模型返回的工具调用描述
-     * @return 需要回填给模型的工具输出文本
-     */
-    std::string execute_model_tool_call(const QwenToolCall& tool_call) {
-        if (!mcp_integration_ || !mcp_integration_->isAvailable()) {
-            return build_tool_error_payload(tool_call.name, "MCP is not available");
-        }
-        if (tool_call.name.empty()) {
-            return build_tool_error_payload("<empty>", "Tool name is empty");
-        }
-
-        const std::string arguments_json = trim(tool_call.arguments_json);
-        if (arguments_json.empty()) {
-            return build_tool_error_payload(tool_call.name, "Tool arguments are empty");
-        }
-
-        try {
-            // 先校验模型返回的 arguments 是否为合法 JSON，避免底层被动退化成空对象。
-            const json validated_arguments = json::parse(arguments_json);
-            (void)validated_arguments;
-        } catch (const std::exception& e) {
-            return build_tool_error_payload(
-                tool_call.name,
-                "Tool arguments are not valid JSON: " + std::string(e.what()));
-        }
-
-        std::cout << "[Orchestrator] 模型请求 MCP 工具: "
-                  << tool_call.name
-                  << " args=" << arguments_json << std::endl;
-
-        const auto tool_result = mcp_integration_->callTool(tool_call.name, arguments_json);
-        if (!tool_result.success) {
-            return build_tool_error_payload(tool_call.name, tool_result.error);
-        }
-
-        if (tool_result.result.empty()) {
-            json payload = {
-                {"tool", tool_call.name},
-                {"success", true},
-                {"result", ""}
-            };
-            return payload.dump();
-        }
-
-        return tool_result.result;
-    }
-
-    /**
-     * @brief 处理未命中专业路由的通用问题
-     * @param query 用户问题
-     * @param context_id 当前会话上下文
-     * @return 大模型生成的回答
-     *
-     * 新链路把工具选择权交给模型：代码只负责提供 tools、
-     * 执行模型请求的工具调用，并把工具结果回填给下一轮消息。
-     */
-    std::string handle_general_query(const std::string& query, const std::string& context_id) {
-        std::vector<QwenMessage> messages = {
-            QwenMessage{"system", build_general_system_prompt(context_id), "", "", {}},
-            QwenMessage{"user", query, "", "", {}}
-        };
-
-        const auto tools = build_mcp_tool_definitions(query);
-        if (tools.empty()) {
-            return qwen_client_.chat_completion(messages).content;
-        }
-
-        constexpr int kMaxToolRounds = 5;
-        for (int round = 0; round < kMaxToolRounds; ++round) {
-            const QwenChatResult round_result = qwen_client_.chat_completion(messages, tools);
-
-            if (round_result.tool_calls.empty()) {
-                if (!round_result.content.empty()) {
-                    return round_result.content;
-                }
-                return "抱歉，我暂时无法生成有效回答。";
-            }
-
-            // 把模型本轮的 tool_calls 作为 assistant 消息回填，供下一轮继续推理。
-            messages.push_back(QwenMessage{
-                "assistant",
-                round_result.content,
-                "",
-                "",
-                round_result.tool_calls
-            });
-
-            for (const auto& tool_call : round_result.tool_calls) {
-                const std::string tool_output = execute_model_tool_call(tool_call);
-
-                // 每个工具结果都用 tool 消息单独回填，让模型自行决定是否继续调用工具。
-                messages.push_back(QwenMessage{
-                    "tool",
-                    tool_output,
-                    tool_call.name,
-                    tool_call.id,
-                    {}
-                });
-            }
-        }
-
-        return "抱歉，工具调用轮次过多，我暂时没能完成这次请求。";
     }
     
     /**
@@ -1162,6 +1038,16 @@ private:
             task_store_->set_task(task);
         }
         task_store_->add_history_message(context_id, message);
+        refresh_context_memory(context_id);
+    }
+
+    /**
+     * @brief 刷新指定上下文的分层记忆
+     * @param context_id 会话上下文 ID
+     */
+    void refresh_context_memory(const std::string& context_id) {
+        auto history = load_context_memory_history(context_id, 0);
+        context_memory_manager_.observe_conversation(context_id, history);
     }
     
     std::string get_agent_card() {
@@ -1200,8 +1086,8 @@ private:
     std::string listen_address_;
     std::shared_ptr<RedisTaskStore> task_store_;
     QwenClient qwen_client_;
+    agent_rpc::orchestrator::ContextMemoryManager context_memory_manager_;
     RegistryClient registry_client_;
-    std::unique_ptr<MCPAgentIntegration> mcp_integration_;
 };
 
 void print_usage(const char* program) {
@@ -1209,11 +1095,11 @@ void print_usage(const char* program) {
     std::cerr << "选项:" << std::endl;
     std::cerr << "  --redis-host <host>     Redis 主机 (默认: 127.0.0.1)" << std::endl;
     std::cerr << "  --redis-port <port>     Redis 端口 (默认: 6379)" << std::endl;
-    std::cerr << "  --mcp-server <path>     MCP Server 可执行文件路径" << std::endl;
-    std::cerr << "  --mcp-args <args>       MCP Server 启动参数 (逗号分隔)" << std::endl;
-    std::cerr << "  --enable-mcp            启用 MCP" << std::endl;
+    std::cerr << "  --mcp-server <path>     兼容保留参数，当前 Orchestrator 不直接使用" << std::endl;
+    std::cerr << "  --mcp-args <args>       兼容保留参数，当前 Orchestrator 不直接使用" << std::endl;
+    std::cerr << "  --enable-mcp            兼容保留参数，当前 Orchestrator 不直接使用" << std::endl;
     std::cerr << std::endl;
-    std::cerr << "示例: " << program << " orch-1 5000 http://localhost:8500 sk-xxx --enable-mcp --mcp-server /path/to/mcp_server" << std::endl;
+    std::cerr << "示例: " << program << " orch-1 5000 http://localhost:8500 sk-xxx --redis-host 127.0.0.1 --redis-port 6379" << std::endl;
 }
 
 int main(int argc, char* argv[]) {

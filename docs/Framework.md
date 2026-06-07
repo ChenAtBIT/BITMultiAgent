@@ -1,188 +1,198 @@
 
-- [A2A Ğ­ÒéÏêÏ¸ËµÃ÷](#a2a-Ğ­ÒéÏêÏ¸ËµÃ÷)
-  - [¸ÅÊö](#¸ÅÊö)
-  - [Ğ­Òé¼Ü¹¹](#Ğ­Òé¼Ü¹¹)
-  - [ºËĞÄ¸ÅÄî](#ºËĞÄ¸ÅÄî)
+- [A2A åè®®è¯¦ç»†è¯´æ˜](#a2a-åè®®è¯¦ç»†è¯´æ˜)
+  - [æ¦‚è¿°](#æ¦‚è¿°)
+  - [åè®®æ¶æ„](#åè®®æ¶æ„)
+  - [æ ¸å¿ƒæ¦‚å¿µ](#æ ¸å¿ƒæ¦‚å¿µ)
     - [Agent Card](#agent-card)
     - [Agent Message](#agent-message)
     - [Agent Task](#agent-task)
     - [Task Status](#task-status)
-  - [×´Ì¬»ú](#×´Ì¬»ú)
-    - [×´Ì¬×ª»»¹æÔò](#×´Ì¬×ª»»¹æÔò)
-  - [API ·½·¨£¨ÇëÇóÓëÏìÓ¦£©](#api-·½·¨ÇëÇóÓëÏìÓ¦)
+  - [çŠ¶æ€æœº](#çŠ¶æ€æœº)
+    - [çŠ¶æ€è½¬æ¢è§„åˆ™](#çŠ¶æ€è½¬æ¢è§„åˆ™)
+  - [API æ–¹æ³•ï¼ˆè¯·æ±‚ä¸å“åº”ï¼‰](#api-æ–¹æ³•è¯·æ±‚ä¸å“åº”)
     - [message/send](#messagesend)
     - [message/stream](#messagestream)
     - [task/get](#taskget)
     - [task/cancel](#taskcancel)
-  - [ÊÊÅä²ã](#ÊÊÅä²ã)
+  - [é€‚é…å±‚](#é€‚é…å±‚)
     - [A2AAdapter](#a2aadapter)
     - [RequestAdapter](#requestadapter)
     - [ResponseAdapter](#responseadapter)
     - [ErrorMapper](#errormapper)
-  - [ÈÎÎñ¹ÜÀí](#ÈÎÎñ¹ÜÀí)
+  - [ä»»åŠ¡ç®¡ç†](#ä»»åŠ¡ç®¡ç†)
     - [TaskManagerWrapper](#taskmanagerwrapper)
-    - [´æ´¢ºó¶Ë](#´æ´¢ºó¶Ë)
-  - [Agent ×¢²áÖĞĞÄ](#agent-×¢²áÖĞĞÄ)
+    - [å­˜å‚¨åç«¯](#å­˜å‚¨åç«¯)
+  - [Agent æ³¨å†Œä¸­å¿ƒ](#agent-æ³¨å†Œä¸­å¿ƒ)
     - [RegistryClient](#registryclient)
-    - [ĞÄÌø»úÖÆ](#ĞÄÌø»úÖÆ)
-  - [Agent Â·ÓÉ](#agent-Â·ÓÉ)
+    - [å¿ƒè·³æœºåˆ¶](#å¿ƒè·³æœºåˆ¶)
+  - [Agent è·¯ç”±](#agent-è·¯ç”±)
     - [AgentRouter](#agentrouter)
-    - [Â·ÓÉ²ßÂÔ](#Â·ÓÉ²ßÂÔ)
-  - [ÅäÖÃ](#ÅäÖÃ)
+    - [è·¯ç”±ç­–ç•¥](#è·¯ç”±ç­–ç•¥)
+  - [é…ç½®](#é…ç½®)
     - [A2AConfig](#a2aconfig)
-  - [´íÎó´¦Àí](#´íÎó´¦Àí)
-  - [¼à¿ØÖ¸±ê](#¼à¿ØÖ¸±ê)
-  - [×î¼ÑÊµ¼ù](#×î¼ÑÊµ¼ù)
-  - [ÏîÄ¿ÊµÏÖ A2A µÄÇëÇóÓëÏìÓ¦](#ÏîÄ¿ÊµÏÖ-a2a-µÄÇëÇóÓëÏìÓ¦)
-- [Êı¾İ²ã£ºRedis ´æ´¢](#Êı¾İ²ãredis-´æ´¢)
-  - [¼üÓëÖµ](#¼üÓëÖµ)
+  - [é”™è¯¯å¤„ç†](#é”™è¯¯å¤„ç†)
+  - [ç›‘æ§æŒ‡æ ‡](#ç›‘æ§æŒ‡æ ‡)
+  - [æœ€ä½³å®è·µ](#æœ€ä½³å®è·µ)
+  - [é¡¹ç›®å®ç° A2A çš„è¯·æ±‚ä¸å“åº”](#é¡¹ç›®å®ç°-a2a-çš„è¯·æ±‚ä¸å“åº”)
+- [æ•°æ®å±‚ï¼šRedis å­˜å‚¨](#æ•°æ®å±‚redis-å­˜å‚¨)
+  - [é”®ä¸å€¼](#é”®ä¸å€¼)
+- [åˆ†å±‚ä¸Šä¸‹æ–‡è®°å¿†ç®¡ç†å™¨](#åˆ†å±‚ä¸Šä¸‹æ–‡è®°å¿†ç®¡ç†å™¨)
+  - [è®¾è®¡ç›®æ ‡](#è®¾è®¡ç›®æ ‡)
+  - [æ ¸å¿ƒæ¨¡å—](#æ ¸å¿ƒæ¨¡å—)
+  - [è®°å¿†åˆ†å±‚](#è®°å¿†åˆ†å±‚)
+  - [è¿è¡Œæµç¨‹](#è¿è¡Œæµç¨‹)
+  - [é•¿æœŸè®°å¿†æ–‡ä»¶](#é•¿æœŸè®°å¿†æ–‡ä»¶)
+  - [LLM æ‘˜è¦ä¸é•¿æœŸæå–](#llm-æ‘˜è¦ä¸é•¿æœŸæå–)
+  - [æ¥å…¥ä½ç½®](#æ¥å…¥ä½ç½®)
+  - [å¤±è´¥é™çº§](#å¤±è´¥é™çº§)
+  - [æµ‹è¯•ä¸ç¼–è¯‘](#æµ‹è¯•ä¸ç¼–è¯‘)
 
 
 
 
-## A2A Ğ­ÒéÏêÏ¸ËµÃ÷
-### ¸ÅÊö
+## A2A åè®®è¯¦ç»†è¯´æ˜
+### æ¦‚è¿°
 
-A2A (Agent-to-Agent) Ğ­ÒéÊÇÒ»ÖÖÓÃÓÚ AI Agent Ö®¼äÍ¨ĞÅµÄ±ê×¼Ğ­Òé¡£±¾¿ò¼ÜÊµÏÖÁË A2A Ğ­ÒéµÄºËĞÄ¹¦ÄÜ£¬Ö§³Ö¶à Agent Ğ­×÷³¡¾°¡£
+A2A (Agent-to-Agent) åè®®æ˜¯ä¸€ç§ç”¨äº AI Agent ä¹‹é—´é€šä¿¡çš„æ ‡å‡†åè®®ã€‚æœ¬æ¡†æ¶å®ç°äº† A2A åè®®çš„æ ¸å¿ƒåŠŸèƒ½ï¼Œæ”¯æŒå¤š Agent åä½œåœºæ™¯ã€‚
 
-### Ğ­Òé¼Ü¹¹
+### åè®®æ¶æ„
 
 ```
-©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´
-©¦                         A2A Protocol                            ©¦
-©À©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©È
-©¦                                                                 ©¦
-©¦  ©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´    HTTP/JSON-RPC    ©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´           ©¦
-©¦  ©¦   Client    ©¦ ?©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤? ©¦   Server    ©¦           ©¦
-©¦  ©¦  (A2AClient)©¦                     ©¦(TaskManager)©¦           ©¦
-©¦  ©¸©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¼                     ©¸©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¼           ©¦
-©¦                                                                 ©¦
-©¦  ÏûÏ¢¸ñÊ½:                                                       ©¦
-©¦  ©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´   ©¦
-©¦  ©¦ {                                                        ©¦   ©¦
-©¦  ©¦   "jsonrpc": "2.0",                                     ©¦   ©¦
-©¦  ©¦   "method": "message/send",                             ©¦   ©¦
-©¦  ©¦   "params": { ... },                                    ©¦   ©¦
-©¦  ©¦   "id": "request-id"                                    ©¦   ©¦
-©¦  ©¦ }                                                        ©¦   ©¦
-©¦  ©¸©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¼   ©¦
-©¦                                                                 ©¦
-©¸©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¼
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                         A2A Protocol                            â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚                                                                 â”‚
+â”‚  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”    HTTP/JSON-RPC    â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”           â”‚
+â”‚  â”‚   Client    â”‚ ?â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€? â”‚   Server    â”‚           â”‚
+â”‚  â”‚  (A2AClient)â”‚                     â”‚(TaskManager)â”‚           â”‚
+â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜                     â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜           â”‚
+â”‚                                                                 â”‚
+â”‚  æ¶ˆæ¯æ ¼å¼:                                                       â”‚
+â”‚  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”   â”‚
+â”‚  â”‚ {                                                        â”‚   â”‚
+â”‚  â”‚   "jsonrpc": "2.0",                                     â”‚   â”‚
+â”‚  â”‚   "method": "message/send",                             â”‚   â”‚
+â”‚  â”‚   "params": { ... },                                    â”‚   â”‚
+â”‚  â”‚   "id": "request-id"                                    â”‚   â”‚
+â”‚  â”‚ }                                                        â”‚   â”‚
+â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜   â”‚
+â”‚                                                                 â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
-### ºËĞÄ¸ÅÄî
+### æ ¸å¿ƒæ¦‚å¿µ
 
 #### Agent Card
 
-Agent µÄÔªÊı¾İÃèÊö£¬°üº¬ Agent µÄÄÜÁ¦ºÍÅäÖÃĞÅÏ¢¡£
+Agent çš„å…ƒæ•°æ®æè¿°ï¼ŒåŒ…å« Agent çš„èƒ½åŠ›å’Œé…ç½®ä¿¡æ¯ã€‚
 
 ```cpp
 struct AgentCard {
-    std::string name;           // Agent Ãû³Æ
-    std::string description;    // Agent ÃèÊö
+    std::string name;           // Agent åç§°
+    std::string description;    // Agent æè¿°
     std::string url;            // Agent URL
-    std::string version;        // °æ±¾ºÅ
-    std::vector<std::string> skills;  // ¼¼ÄÜÁĞ±í
+    std::string version;        // ç‰ˆæœ¬å·
+    std::vector<std::string> skills;  // æŠ€èƒ½åˆ—è¡¨
     
-    // ¿ÉÑ¡×Ö¶Î
-    std::string provider;       // Ìá¹©Õß
-    std::string documentation_url;  // ÎÄµµ URL
-    AuthenticationInfo authentication;  // ÈÏÖ¤ĞÅÏ¢
+    // å¯é€‰å­—æ®µ
+    std::string provider;       // æä¾›è€…
+    std::string documentation_url;  // æ–‡æ¡£ URL
+    AuthenticationInfo authentication;  // è®¤è¯ä¿¡æ¯
 };
 ```
 
 #### Agent Message
 
-Agent Ö®¼ä´«µİµÄÏûÏ¢¡£
+Agent ä¹‹é—´ä¼ é€’çš„æ¶ˆæ¯ã€‚
 
 ```cpp
 struct AgentMessage {
-    std::string role;           // "user" »ò "agent"
-    std::vector<MessagePart> parts;  // ÏûÏ¢²¿·Ö
-    std::string context_id;     // ÉÏÏÂÎÄ ID
-    std::string message_id;     // ÏûÏ¢ ID
-    std::string timestamp;      // Ê±¼ä´Á
+    std::string role;           // "user" æˆ– "agent"
+    std::vector<MessagePart> parts;  // æ¶ˆæ¯éƒ¨åˆ†
+    std::string context_id;     // ä¸Šä¸‹æ–‡ ID
+    std::string message_id;     // æ¶ˆæ¯ ID
+    std::string timestamp;      // æ—¶é—´æˆ³
 };
 
 struct MessagePart {
-    std::string type;           // "text", "image", "file" µÈ
-    std::string content;        // ÄÚÈİ
-    std::string mime_type;      // MIME ÀàĞÍ
+    std::string type;           // "text", "image", "file" ç­‰
+    std::string content;        // å†…å®¹
+    std::string mime_type;      // MIME ç±»å‹
 };
 ```
 
 #### Agent Task
 
-ÈÎÎñ±íÊ¾Ò»´ÎÍêÕûµÄ½»»¥¡£
+ä»»åŠ¡è¡¨ç¤ºä¸€æ¬¡å®Œæ•´çš„äº¤äº’ã€‚
 
 ```cpp
 struct AgentTask {
-    std::string id;             // ÈÎÎñ ID
-    std::string context_id;     // ÉÏÏÂÎÄ ID
-    TaskStatus status;          // ÈÎÎñ×´Ì¬
-    std::vector<AgentMessage> messages;  // ÏûÏ¢ÀúÊ·
-    std::vector<Artifact> artifacts;     // ²ú³öÎï
-    std::string created_at;     // ´´½¨Ê±¼ä
-    std::string updated_at;     // ¸üĞÂÊ±¼ä
+    std::string id;             // ä»»åŠ¡ ID
+    std::string context_id;     // ä¸Šä¸‹æ–‡ ID
+    TaskStatus status;          // ä»»åŠ¡çŠ¶æ€
+    std::vector<AgentMessage> messages;  // æ¶ˆæ¯å†å²
+    std::vector<Artifact> artifacts;     // äº§å‡ºç‰©
+    std::string created_at;     // åˆ›å»ºæ—¶é—´
+    std::string updated_at;     // æ›´æ–°æ—¶é—´
 };
 ```
 
 #### Task Status
 
-ÈÎÎñ×´Ì¬Ã¶¾Ù¡£
+ä»»åŠ¡çŠ¶æ€æšä¸¾ã€‚
 
 ```cpp
 enum class TaskState {
-    SUBMITTED,   // ÒÑÌá½»
-    RUNNING,     // ÔËĞĞÖĞ
-    COMPLETED,   // ÒÑÍê³É
-    FAILED,      // Ê§°Ü
-    CANCELED     // ÒÑÈ¡Ïû
+    SUBMITTED,   // å·²æäº¤
+    RUNNING,     // è¿è¡Œä¸­
+    COMPLETED,   // å·²å®Œæˆ
+    FAILED,      // å¤±è´¥
+    CANCELED     // å·²å–æ¶ˆ
 };
 
 struct TaskStatus {
     TaskState state;
-    std::string message;        // ×´Ì¬ÏûÏ¢
-    int progress;               // ½ø¶È (0-100)
+    std::string message;        // çŠ¶æ€æ¶ˆæ¯
+    int progress;               // è¿›åº¦ (0-100)
 };
 ```
 
-### ×´Ì¬»ú
+### çŠ¶æ€æœº
 
 ```
-                    ©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´
-                    ©¦  SUBMITTED   ©¦
-                    ©¸©¤©¤©¤©¤©¤©¤©Ğ©¤©¤©¤©¤©¤©¤©¤©¼
-                           ©¦
-                           ¨‹
-                    ©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´
-                    ©¦   RUNNING    ©¦
-                    ©¸©¤©¤©¤©¤©¤©¤©Ğ©¤©¤©¤©¤©¤©¤©¤©¼
-                           ©¦
-           ©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©à©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´
-           ¨‹               ¨‹               ¨‹
-    ©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´ ©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´ ©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´
-    ©¦  COMPLETED   ©¦ ©¦    FAILED    ©¦ ©¦   CANCELED   ©¦
-    ©¸©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¼ ©¸©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¼ ©¸©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¼
+                    â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+                    â”‚  SUBMITTED   â”‚
+                    â””â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”˜
+                           â”‚
+                           â–¼
+                    â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+                    â”‚   RUNNING    â”‚
+                    â””â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”˜
+                           â”‚
+           â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+           â–¼               â–¼               â–¼
+    â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â” â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â” â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+    â”‚  COMPLETED   â”‚ â”‚    FAILED    â”‚ â”‚   CANCELED   â”‚
+    â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜ â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜ â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
-#### ×´Ì¬×ª»»¹æÔò
+#### çŠ¶æ€è½¬æ¢è§„åˆ™
 
-| µ±Ç°×´Ì¬ | ÔÊĞí×ª»»µ½ |
+| å½“å‰çŠ¶æ€ | å…è®¸è½¬æ¢åˆ° |
 |----------|------------|
 | SUBMITTED | RUNNING, CANCELED |
 | RUNNING | COMPLETED, FAILED, CANCELED |
-| COMPLETED | (ÖÕÌ¬) |
-| FAILED | (ÖÕÌ¬) |
-| CANCELED | (ÖÕÌ¬) |
+| COMPLETED | (ç»ˆæ€) |
+| FAILED | (ç»ˆæ€) |
+| CANCELED | (ç»ˆæ€) |
 
-### API ·½·¨£¨ÇëÇóÓëÏìÓ¦£©
+### API æ–¹æ³•ï¼ˆè¯·æ±‚ä¸å“åº”ï¼‰
 
 #### message/send
 
-·¢ËÍÏûÏ¢¸ø Agent¡£
+å‘é€æ¶ˆæ¯ç»™ Agentã€‚
 
-**ÇëÇó:**
+**è¯·æ±‚:**
 ```json
 {
     "jsonrpc": "2.0",
@@ -193,7 +203,7 @@ struct TaskStatus {
             "parts": [
                 {
                     "type": "text",
-                    "content": "¼ÆËã 123 + 456"
+                    "content": "è®¡ç®— 123 + 456"
                 }
             ]
         },
@@ -203,7 +213,7 @@ struct TaskStatus {
 }
 ```
 
-**ÏìÓ¦:**
+**å“åº”:**
 ```json
 {
     "jsonrpc": "2.0",
@@ -213,7 +223,7 @@ struct TaskStatus {
             "context_id": "ctx-001",
             "status": {
                 "state": "completed",
-                "message": "¼ÆËãÍê³É"
+                "message": "è®¡ç®—å®Œæˆ"
             },
             "messages": [
                 {
@@ -234,14 +244,14 @@ struct TaskStatus {
 
 #### message/stream
 
-Á÷Ê½·¢ËÍÏûÏ¢¡£
+æµå¼å‘é€æ¶ˆæ¯ã€‚
 
-**ÇëÇó:** Í¬ message/send
+**è¯·æ±‚:** åŒ message/send
 
-**ÏìÓ¦:** Server-Sent Events (SSE)
+**å“åº”:** Server-Sent Events (SSE)
 ```
 event: thinking
-data: {"content": "ÕıÔÚ·ÖÎöÎÊÌâ..."}
+data: {"content": "æ­£åœ¨åˆ†æé—®é¢˜..."}
 
 event: content
 data: {"content": "123 + 456 = "}
@@ -255,9 +265,9 @@ data: {"task_id": "task-001"}
 
 #### task/get
 
-»ñÈ¡ÈÎÎñ×´Ì¬¡£
+è·å–ä»»åŠ¡çŠ¶æ€ã€‚
 
-**ÇëÇó:**
+**è¯·æ±‚:**
 ```json
 {
     "jsonrpc": "2.0",
@@ -269,7 +279,7 @@ data: {"task_id": "task-001"}
 }
 ```
 
-**ÏìÓ¦:**
+**å“åº”:**
 ```json
 {
     "jsonrpc": "2.0",
@@ -287,9 +297,9 @@ data: {"task_id": "task-001"}
 
 #### task/cancel
 
-È¡ÏûÈÎÎñ¡£
+å–æ¶ˆä»»åŠ¡ã€‚
 
-**ÇëÇó:**
+**è¯·æ±‚:**
 ```json
 {
     "jsonrpc": "2.0",
@@ -301,11 +311,11 @@ data: {"task_id": "task-001"}
 }
 ```
 
-### ÊÊÅä²ã
+### é€‚é…å±‚
 
 #### A2AAdapter
 
-½« gRPC ÇëÇó×ª»»Îª A2A Ğ­Òé¡£
+å°† gRPC è¯·æ±‚è½¬æ¢ä¸º A2A åè®®ã€‚
 
 ```cpp
 #include "agent_rpc/a2a_adapter/a2a_adapter.h"
@@ -317,13 +327,13 @@ config.request_timeout_seconds = 30;
 A2AAdapter adapter(config);
 adapter.initialize();
 
-// Í¬²½²éÑ¯
+// åŒæ­¥æŸ¥è¯¢
 AIQueryRequest request;
-request.set_question("¼ÆËã 123 + 456");
+request.set_question("è®¡ç®— 123 + 456");
 
 AIQueryResponse response = adapter.processQuery(request);
 
-// Á÷Ê½²éÑ¯
+// æµå¼æŸ¥è¯¢
 adapter.processQueryStreaming(request, [](const AIStreamEvent& event) {
     std::cout << event.content() << std::flush;
 });
@@ -331,14 +341,14 @@ adapter.processQueryStreaming(request, [](const AIStreamEvent& event) {
 
 #### RequestAdapter
 
-ÇëÇó×ª»»Æ÷¡£
+è¯·æ±‚è½¬æ¢å™¨ã€‚
 
 ```cpp
 #include "agent_rpc/a2a_adapter/request_adapter.h"
 
 RequestAdapter adapter;
 
-// ×ª»» RPC ÇëÇóÎª A2A ÏûÏ¢
+// è½¬æ¢ RPC è¯·æ±‚ä¸º A2A æ¶ˆæ¯
 AIQueryRequest rpc_request;
 rpc_request.set_question("Hello");
 rpc_request.set_context_id("ctx-001");
@@ -348,36 +358,36 @@ a2a::MessageSendParams a2a_params = adapter.convertToA2A(rpc_request);
 
 #### ResponseAdapter
 
-ÏìÓ¦×ª»»Æ÷¡£
+å“åº”è½¬æ¢å™¨ã€‚
 
 ```cpp
 #include "agent_rpc/a2a_adapter/response_adapter.h"
 
 ResponseAdapter adapter;
 
-// ×ª»» A2A ÏìÓ¦Îª RPC ÏìÓ¦
+// è½¬æ¢ A2A å“åº”ä¸º RPC å“åº”
 a2a::AgentTask a2a_task;
-// ... Ìî³ä a2a_task
+// ... å¡«å…… a2a_task
 
 AIQueryResponse rpc_response = adapter.convertFromA2A(a2a_task);
 ```
 
 #### ErrorMapper
 
-´íÎóÂëÓ³Éä¡£
+é”™è¯¯ç æ˜ å°„ã€‚
 
 ```cpp
 #include "agent_rpc/a2a_adapter/error_mapper.h"
 
 ErrorMapper mapper;
 
-// A2A ´íÎóÂë -> gRPC ×´Ì¬Âë
+// A2A é”™è¯¯ç  -> gRPC çŠ¶æ€ç 
 a2a::ErrorCode a2a_error = a2a::ErrorCode::TASK_NOT_FOUND;
 grpc::StatusCode grpc_status = mapper.mapToGrpc(a2a_error);
-// ½á¹û: grpc::StatusCode::NOT_FOUND
+// ç»“æœ: grpc::StatusCode::NOT_FOUND
 ```
 
-| A2A ´íÎóÂë | gRPC ×´Ì¬Âë |
+| A2A é”™è¯¯ç  | gRPC çŠ¶æ€ç  |
 |------------|-------------|
 | INVALID_REQUEST | INVALID_ARGUMENT |
 | METHOD_NOT_FOUND | UNIMPLEMENTED |
@@ -386,60 +396,60 @@ grpc::StatusCode grpc_status = mapper.mapToGrpc(a2a_error);
 | TIMEOUT | DEADLINE_EXCEEDED |
 | INTERNAL_ERROR | INTERNAL |
 
-### ÈÎÎñ¹ÜÀí
+### ä»»åŠ¡ç®¡ç†
 
 #### TaskManagerWrapper
 
-ÈÎÎñ¹ÜÀíÆ÷·â×°¡£
+ä»»åŠ¡ç®¡ç†å™¨å°è£…ã€‚
 
 ```cpp
 #include "agent_rpc/a2a_adapter/task_manager_wrapper.h"
 
 TaskManagerWrapper manager;
 
-// ´´½¨ÈÎÎñ
+// åˆ›å»ºä»»åŠ¡
 std::string task_id = manager.createTask("ctx-001");
 
-// ¸üĞÂ×´Ì¬
-manager.updateStatus(task_id, TaskState::RUNNING, "´¦ÀíÖĞ");
+// æ›´æ–°çŠ¶æ€
+manager.updateStatus(task_id, TaskState::RUNNING, "å¤„ç†ä¸­");
 
-// Ìí¼ÓÏûÏ¢
+// æ·»åŠ æ¶ˆæ¯
 AgentMessage message;
 message.role = "agent";
 message.parts.push_back({"text", "Hello"});
 manager.addMessage(task_id, message);
 
-// »ñÈ¡ÈÎÎñ
+// è·å–ä»»åŠ¡
 auto task = manager.getTask(task_id);
 
-// ²éÑ¯ÀúÊ·
+// æŸ¥è¯¢å†å²
 auto history = manager.getHistory("ctx-001");
 ```
 
-#### ´æ´¢ºó¶Ë
+#### å­˜å‚¨åç«¯
 
-Ö§³Ö¶àÖÖ´æ´¢ºó¶Ë£º
+æ”¯æŒå¤šç§å­˜å‚¨åç«¯ï¼š
 
-| ºó¶Ë | ÃèÊö | ÊÊÓÃ³¡¾° |
+| åç«¯ | æè¿° | é€‚ç”¨åœºæ™¯ |
 |------|------|----------|
-| MemoryTaskStore | ÄÚ´æ´æ´¢ | ¿ª·¢²âÊÔ |
-| RedisTaskStore | Redis ´æ´¢ | Éú²ú»·¾³ |
+| MemoryTaskStore | å†…å­˜å­˜å‚¨ | å¼€å‘æµ‹è¯• |
+| RedisTaskStore | Redis å­˜å‚¨ | ç”Ÿäº§ç¯å¢ƒ |
 
 ```cpp
-// Ê¹ÓÃÄÚ´æ´æ´¢
+// ä½¿ç”¨å†…å­˜å­˜å‚¨
 A2AConfig config;
 config.enable_redis_store = false;
 
-// Ê¹ÓÃ Redis ´æ´¢
+// ä½¿ç”¨ Redis å­˜å‚¨
 config.enable_redis_store = true;
 config.redis_url = "localhost:6379";
 ```
 
-### Agent ×¢²áÖĞĞÄ
+### Agent æ³¨å†Œä¸­å¿ƒ
 
 #### RegistryClient
 
-×¢²áÖĞĞÄ¿Í»§¶Ë¡£
+æ³¨å†Œä¸­å¿ƒå®¢æˆ·ç«¯ã€‚
 
 ```cpp
 #include "agent_rpc/orchestrator/registry_client.h"
@@ -447,51 +457,51 @@ config.redis_url = "localhost:6379";
 RegistryClient client("http://localhost:8500");
 client.connect();
 
-// ×¢²á Agent
+// æ³¨å†Œ Agent
 AgentCard card;
 card.name = "math-agent";
 card.skills = {"math", "calculation"};
 client.registerAgent(card);
 
-// ·¢ÏÖ Agent
+// å‘ç° Agent
 auto agents = client.discoverAgents("math");
 
-// ĞÄÌø
-client.startHeartbeatLoop(30); // 30Ãë¼ä¸ô
+// å¿ƒè·³
+client.startHeartbeatLoop(30); // 30ç§’é—´éš”
 ```
 
-#### ĞÄÌø»úÖÆ
+#### å¿ƒè·³æœºåˆ¶
 
 ```
-©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´                    ©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´
-©¦    Agent    ©¦                    ©¦  Registry   ©¦
-©¸©¤©¤©¤©¤©¤©¤©Ğ©¤©¤©¤©¤©¤©¤©¼                    ©¸©¤©¤©¤©¤©¤©¤©Ğ©¤©¤©¤©¤©¤©¤©¼
-       ©¦                                  ©¦
-       ©¦  ©¤©¤©¤©¤ register ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤? ©¦
-       ©¦                                  ©¦
-       ©¦  ?©¤©¤©¤ registered ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤ ©¦
-       ©¦                                  ©¦
-       ©¦  ©¤©¤©¤©¤ heartbeat ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤? ©¦ (Ã¿30Ãë)
-       ©¦                                  ©¦
-       ©¦  ?©¤©¤©¤ ack ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤  ©¦
-       ©¦                                  ©¦
-       ©¦  ©¤©¤©¤©¤ heartbeat ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤? ©¦
-       ©¦                                  ©¦
-       ©¦  ?©¤©¤©¤ ack ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤  ©¦
-       ©¦                                  ©¦
-       ©¦         ...                      ©¦
-       ©¦                                  ©¦
-       ©¦  (³¬Ê±Î´ÊÕµ½ĞÄÌø)                  ©¦
-       ©¦                                  ©¦
-       ©¦                    Agent ±ê¼ÇÎª²»½¡¿µ
-       ©¦                                  ©¦
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”                    â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚    Agent    â”‚                    â”‚  Registry   â”‚
+â””â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”˜                    â””â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”˜
+       â”‚                                  â”‚
+       â”‚  â”€â”€â”€â”€ register â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€? â”‚
+       â”‚                                  â”‚
+       â”‚  ?â”€â”€â”€ registered â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ â”‚
+       â”‚                                  â”‚
+       â”‚  â”€â”€â”€â”€ heartbeat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€? â”‚ (æ¯30ç§’)
+       â”‚                                  â”‚
+       â”‚  ?â”€â”€â”€ ack â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€  â”‚
+       â”‚                                  â”‚
+       â”‚  â”€â”€â”€â”€ heartbeat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€? â”‚
+       â”‚                                  â”‚
+       â”‚  ?â”€â”€â”€ ack â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€  â”‚
+       â”‚                                  â”‚
+       â”‚         ...                      â”‚
+       â”‚                                  â”‚
+       â”‚  (è¶…æ—¶æœªæ”¶åˆ°å¿ƒè·³)                  â”‚
+       â”‚                                  â”‚
+       â”‚                    Agent æ ‡è®°ä¸ºä¸å¥åº·
+       â”‚                                  â”‚
 ```
 
-### Agent Â·ÓÉ
+### Agent è·¯ç”±
 
 #### AgentRouter
 
-Agent Â·ÓÉÆ÷¡£
+Agent è·¯ç”±å™¨ã€‚
 
 ```cpp
 #include "agent_rpc/orchestrator/agent_router.h"
@@ -499,56 +509,56 @@ Agent Â·ÓÉÆ÷¡£
 AgentRouter router;
 router.initialize(RoutingStrategy::SKILL_MATCH);
 
-// ¸üĞÂ Agent ÁĞ±í
+// æ›´æ–° Agent åˆ—è¡¨
 std::vector<AgentInfo> agents = registry.discoverAgents();
 router.updateAgentList(agents);
 
-// Ñ¡Ôñ Agent
-auto selected = router.selectAgent("¼ÆËã 123 + 456", {"math"});
+// é€‰æ‹© Agent
+auto selected = router.selectAgent("è®¡ç®— 123 + 456", {"math"});
 if (selected.has_value()) {
-    std::cout << "Ñ¡Ôñ: " << selected->name << std::endl;
+    std::cout << "é€‰æ‹©: " << selected->name << std::endl;
 }
 
-// ½¡¿µ×´Ì¬¹ÜÀí
+// å¥åº·çŠ¶æ€ç®¡ç†
 router.markAgentUnhealthy("agent-001");
 router.markAgentHealthy("agent-001");
 ```
 
-#### Â·ÓÉ²ßÂÔ
+#### è·¯ç”±ç­–ç•¥
 
-| ²ßÂÔ | ÃèÊö |
+| ç­–ç•¥ | æè¿° |
 |------|------|
-| ROUND_ROBIN | ÂÖÑ¯Ñ¡Ôñ |
-| RANDOM | Ëæ»úÑ¡Ôñ |
-| SKILL_MATCH | ¼¼ÄÜÆ¥Åä |
-| LEAST_LOAD | ×îÉÙ¸ºÔØ |
+| ROUND_ROBIN | è½®è¯¢é€‰æ‹© |
+| RANDOM | éšæœºé€‰æ‹© |
+| SKILL_MATCH | æŠ€èƒ½åŒ¹é… |
+| LEAST_LOAD | æœ€å°‘è´Ÿè½½ |
 
-### ÅäÖÃ
+### é…ç½®
 
 #### A2AConfig
 
 ```cpp
 struct A2AConfig {
-    // Orchestrator ÅäÖÃ
+    // Orchestrator é…ç½®
     std::string orchestrator_url = "http://localhost:5000";
     int orchestrator_port = 5000;
     
-    // Registry ÅäÖÃ
+    // Registry é…ç½®
     std::string registry_url = "http://localhost:8500";
     
-    // ´æ´¢ÅäÖÃ
+    // å­˜å‚¨é…ç½®
     bool enable_redis_store = false;
     std::string redis_url = "localhost:6379";
     
-    // ³¬Ê±ÅäÖÃ
+    // è¶…æ—¶é…ç½®
     int request_timeout_seconds = 30;
     
-    // ÀúÊ·ÅäÖÃ
+    // å†å²é…ç½®
     int history_length = 10;
 };
 ```
 
-### ´íÎó´¦Àí
+### é”™è¯¯å¤„ç†
 
 ```cpp
 try {
@@ -556,55 +566,55 @@ try {
 } catch (const a2a::A2AException& e) {
     switch (e.error_code()) {
         case a2a::ErrorCode::AGENT_UNAVAILABLE:
-            // ÖØÊÔ»ò½µ¼¶
+            // é‡è¯•æˆ–é™çº§
             break;
         case a2a::ErrorCode::TIMEOUT:
-            // ³¬Ê±´¦Àí
+            // è¶…æ—¶å¤„ç†
             break;
         default:
-            // ÆäËû´íÎó
+            // å…¶ä»–é”™è¯¯
             break;
     }
 }
 ```
 
-### ¼à¿ØÖ¸±ê
+### ç›‘æ§æŒ‡æ ‡
 
-| Ö¸±ê | ÃèÊö |
+| æŒ‡æ ‡ | æè¿° |
 |------|------|
-| a2a_requests_total | A2A ÇëÇó×ÜÊı |
-| a2a_request_latency_ms | ÇëÇóÑÓ³Ù |
-| a2a_errors_total | ´íÎó×ÜÊı |
-| a2a_tasks_active | »îÔ¾ÈÎÎñÊı |
-| a2a_agents_healthy | ½¡¿µ Agent Êı |
+| a2a_requests_total | A2A è¯·æ±‚æ€»æ•° |
+| a2a_request_latency_ms | è¯·æ±‚å»¶è¿Ÿ |
+| a2a_errors_total | é”™è¯¯æ€»æ•° |
+| a2a_tasks_active | æ´»è·ƒä»»åŠ¡æ•° |
+| a2a_agents_healthy | å¥åº· Agent æ•° |
 
-### ×î¼ÑÊµ¼ù
+### æœ€ä½³å®è·µ
 
-1. **ÉèÖÃºÏÀíµÄ³¬Ê±**: ¸ù¾İÈÎÎñ¸´ÔÓ¶ÈÉèÖÃ³¬Ê±Ê±¼ä
-2. **ÆôÓÃĞÄÌø**: ±£³Ö Agent ½¡¿µ×´Ì¬¸üĞÂ
-3. **Ê¹ÓÃ Redis ´æ´¢**: Éú²ú»·¾³Ê¹ÓÃ³Ö¾Ã»¯´æ´¢
-4. **¼à¿Ø´íÎóÂÊ**: ¼°Ê±·¢ÏÖÎÊÌâ
-5. **ÊµÏÖ½µ¼¶Âß¼­**: Agent ²»¿ÉÓÃÊ±ÓĞ±¸Ñ¡·½°¸
-
-
-### ÏîÄ¿ÊµÏÖ A2A µÄÇëÇóÓëÏìÓ¦
-Orchestrator ÔÚµ÷ÓÃ×Ó Agent Ê±»á¹¹Ôì json-rpc ¸ñÊ½ÇëÇó£¬Í¨¹ı HTTP ´«µİÇëÇó£¬×Ó Agent ½ÓÊÕµ½ºó»á½âÎöÇëÇó£¨½âÎö³É json-rpc ¸ñÊ½£©²¢´¦Àí¡£
+1. **è®¾ç½®åˆç†çš„è¶…æ—¶**: æ ¹æ®ä»»åŠ¡å¤æ‚åº¦è®¾ç½®è¶…æ—¶æ—¶é—´
+2. **å¯ç”¨å¿ƒè·³**: ä¿æŒ Agent å¥åº·çŠ¶æ€æ›´æ–°
+3. **ä½¿ç”¨ Redis å­˜å‚¨**: ç”Ÿäº§ç¯å¢ƒä½¿ç”¨æŒä¹…åŒ–å­˜å‚¨
+4. **ç›‘æ§é”™è¯¯ç‡**: åŠæ—¶å‘ç°é—®é¢˜
+5. **å®ç°é™çº§é€»è¾‘**: Agent ä¸å¯ç”¨æ—¶æœ‰å¤‡é€‰æ–¹æ¡ˆ
 
 
-## Êı¾İ²ã£ºRedis ´æ´¢
-### ¼üÓëÖµ
-Á½Àà¼ü£º
+### é¡¹ç›®å®ç° A2A çš„è¯·æ±‚ä¸å“åº”
+Orchestrator åœ¨è°ƒç”¨å­ Agent æ—¶ä¼šæ„é€  json-rpc æ ¼å¼è¯·æ±‚ï¼Œé€šè¿‡ HTTP ä¼ é€’è¯·æ±‚ï¼Œå­ Agent æ¥æ”¶åˆ°åä¼šè§£æè¯·æ±‚ï¼ˆè§£ææˆ json-rpc æ ¼å¼ï¼‰å¹¶å¤„ç†ã€‚
+
+
+## æ•°æ®å±‚ï¼šRedis å­˜å‚¨
+### é”®ä¸å€¼
+ä¸¤ç±»é”®ï¼š
 ```json
-// ÊµÏÖ´úÂëÖĞ id = contextId£¬Îª¿Í»§¶ËµÇÈëµÄ contextId
-a2a:task:<id>            // string£¬ÖµÊÇ AgentTask µÄ JSON
-a2a:history:<contextId>  // list£¬ÁĞ±íÔªËØÊÇ AgentMessage µÄ JSON
+// å®ç°ä»£ç ä¸­ id = contextIdï¼Œä¸ºå®¢æˆ·ç«¯ç™»å…¥çš„ contextId
+a2a:task:<id>            // stringï¼Œå€¼æ˜¯ AgentTask çš„ JSON
+a2a:history:<contextId>  // listï¼Œåˆ—è¡¨å…ƒç´ æ˜¯ AgentMessage çš„ JSON
 ```
 
-- a2a:task:<id> ÊÇÈÎÎñ/»á»°µÄÔªĞÅÏ¢¡£ËüÖ÷ÒªÓÃÀ´´æÕâ¸ö»á»°ÊÇ·ñ´æÔÚ¡¢µ±Ç°×´Ì¬ÊÇÊ²Ã´£¬±ÈÈç running£¬ÒÔºóÒ²¿ÉÒÔ¹Ò artifacts¡¢metadata ÕâÀà¸½¼ÓĞÅÏ¢¡£´úÂëÀïËüÊÇ Redis string¡£
-- a2a:history:<contextId> ÊÇÕâ´Î»á»°µÄÁÄÌìÀúÊ·¡£
-Ëü°´Ê±¼äË³Ğò°Ñ user/agent ÏûÏ¢Ò»ÌõÌõ RPUSH ½øÈ¥£¬Ä£ĞÍÏÂ´Î»Ø´ğÇ°ÔÙ LRANGE È¡×î½ü¼¸ÌõÆ´ÉÏÏÂÎÄ£¬ËùÒÔËü±¾ÖÊÉÏÊÇ¡°¶àÂÖ¶Ô»°¼ÇÒä¡±¡£´úÂëÀïËüÊÇ Redis list¡£
+- a2a:task:<id> æ˜¯ä»»åŠ¡/ä¼šè¯çš„å…ƒä¿¡æ¯ã€‚å®ƒä¸»è¦ç”¨æ¥å­˜è¿™ä¸ªä¼šè¯æ˜¯å¦å­˜åœ¨ã€å½“å‰çŠ¶æ€æ˜¯ä»€ä¹ˆï¼Œæ¯”å¦‚ runningï¼Œä»¥åä¹Ÿå¯ä»¥æŒ‚ artifactsã€metadata è¿™ç±»é™„åŠ ä¿¡æ¯ã€‚ä»£ç é‡Œå®ƒæ˜¯ Redis stringã€‚
+- a2a:history:<contextId> æ˜¯è¿™æ¬¡ä¼šè¯çš„èŠå¤©å†å²ã€‚
+å®ƒæŒ‰æ—¶é—´é¡ºåºæŠŠ user/agent æ¶ˆæ¯ä¸€æ¡æ¡ RPUSH è¿›å»ï¼Œæ¨¡å‹ä¸‹æ¬¡å›ç­”å‰å† LRANGE å–æœ€è¿‘å‡ æ¡æ‹¼ä¸Šä¸‹æ–‡ï¼Œæ‰€ä»¥å®ƒæœ¬è´¨ä¸Šæ˜¯â€œå¤šè½®å¯¹è¯è®°å¿†â€ã€‚ä»£ç é‡Œå®ƒæ˜¯ Redis listã€‚
 
-¶ÔÓ¦Öµ£º
+å¯¹åº”å€¼ï¼š
 ```json
 // a2a:task:<id>
 {
@@ -620,7 +630,7 @@ a2a:history:<contextId>  // list£¬ÁĞ±íÔªËØÊÇ AgentMessage µÄ JSON
   "metadata": { ... }
 }
 
-// a2a:history:<contextId> ÀïµÄÃ¿¸öÔªËØ
+// a2a:history:<contextId> é‡Œçš„æ¯ä¸ªå…ƒç´ 
 {
   "messageId": "msg-xxx",
   "role": "user|agent|system",
@@ -630,4 +640,240 @@ a2a:history:<contextId>  // list£¬ÁĞ±íÔªËØÊÇ AgentMessage µÄ JSON
     { "kind": "text", "text": "..." }
   ]
 }
+```
+
+## åˆ†å±‚ä¸Šä¸‹æ–‡è®°å¿†ç®¡ç†å™¨
+
+### è®¾è®¡ç›®æ ‡
+
+æœ¬é¡¹ç›®æ–°å¢çš„ä¸Šä¸‹æ–‡è®°å¿†ç®¡ç†å™¨ç”¨äºè§£å†³å¤šè½®å¯¹è¯ä¸­ä¸Šä¸‹æ–‡ä¸æ–­å¢é•¿ã€Redis å†å²ç›´æ¥æ‹¼æ¥å¯¼è‡´ Token å¼€é”€é«˜ã€ä¸åŒç”¨æˆ·ä¼šè¯ä¹‹é—´è®°å¿†å®¹æ˜“æ··ç”¨çš„é—®é¢˜ã€‚
+
+å®ƒçš„ç›®æ ‡æ˜¯ï¼š
+
+1. ä»¥ `context_id` éš”ç¦»é•¿æœŸè®°å¿†ï¼Œç”¨æˆ·ç™»å½•æˆ–å®¢æˆ·ç«¯åˆ‡æ¢ä¸Šä¸‹æ–‡åä½¿ç”¨ç‹¬ç«‹è®°å¿†æ–‡ä»¶ã€‚
+2. å°†å¯¹è¯å†å²åˆ†æˆå·¥ä½œè®°å¿†ã€çŸ­æœŸæ‘˜è¦å’Œé•¿æœŸæ ¸å¿ƒè®°å¿†ä¸‰å±‚ï¼Œé¿å…æŠŠæ‰€æœ‰å†å²ç›´æ¥å¡è¿› promptã€‚
+3. ä½¿ç”¨ LLM åšæ‘˜è¦å‹ç¼©å’Œé•¿æœŸè®°å¿†æå–ï¼Œè€Œä¸æ˜¯ç®€å•æˆªæ–­æˆ–è§„åˆ™æŠ½å–ã€‚
+4. ä»çŸ­æœŸè®°å¿†ä¸­é‡ç‚¹æå–ç§‘ç ”äººçš„ç ”ç©¶æ–¹å‘ã€æŠ€æœ¯åå¥½ã€åä½œåå¥½ã€é¡¹ç›®èƒŒæ™¯ã€ç¨³å®šå†³ç­–å’Œé•¿æœŸçº¦æŸã€‚
+5. æ‘˜è¦æˆ–æå–å¤±è´¥æ—¶ä¸å½±å“å½“å‰è¯·æ±‚ç»§ç»­æ‰§è¡Œï¼Œç³»ç»Ÿå›é€€åˆ°æœ€è¿‘å·¥ä½œè®°å¿†ã€‚
+
+### æ ¸å¿ƒæ¨¡å—
+
+å®ç°æ–‡ä»¶ï¼š
+
+| æ–‡ä»¶ | ä½œç”¨ |
+|---|---|
+| `orchestrator/include/agent_rpc/orchestrator/context_memory_manager.h` | å®šä¹‰åˆ†å±‚è®°å¿†æ•°æ®ç»“æ„ã€é…ç½®å’Œç®¡ç†å™¨æ¥å£ |
+| `orchestrator/src/context_memory_manager.cpp` | å®ç°æ‘˜è¦å‹ç¼©ã€é•¿æœŸè®°å¿†æå–ã€æ–‡ä»¶æŒä¹…åŒ–å’Œä¸Šä¸‹æ–‡æ„é€  |
+| `examples/ai_orchestrator/orchestrator_main.cpp` | Orchestrator æ¥å…¥åˆ†å±‚è®°å¿†ï¼Œå¹¶æ¢å¤ç”¨æˆ·æ¶ˆæ¯å’Œå›å¤ä¿å­˜ |
+| `examples/ai_orchestrator/include/ai_orchestrator/react_agent_template.hpp` | Math Agent ç­‰ ReAct ä¸“ä¸š Agent å¤ç”¨åŒä¸€å¥—è®°å¿†ç®¡ç†é€»è¾‘ |
+| `tests/test_context_memory_manager.cpp` | è¦†ç›–æ–‡ä»¶éš”ç¦»ã€LLM å¤±è´¥ã€å‹ç¼©æ¸¸æ ‡å’Œä¸Šä¸‹æ–‡æ„é€  |
+
+æ ¸å¿ƒç±»å‹ï¼š
+
+```cpp
+struct ContextMemoryMessage {
+    std::string role;
+    std::string content;
+};
+
+struct LongTermMemoryItem {
+    std::string content;
+    std::string category;
+    std::string source;
+    std::string created_at;
+    std::string updated_at;
+    int importance = 5;
+    int hit_count = 1;
+};
+
+struct ContextMemoryConfig {
+    std::size_t max_tokens = 8000;
+    double working_memory_ratio = 0.5;
+    double short_term_ratio = 0.25;
+    double long_term_ratio = 0.25;
+    std::size_t keep_recent_messages = 8;
+    std::string memory_dir = "build/runtime/context_memory";
+};
+```
+
+`ContextMemoryManager` ä¸ç›´æ¥ä¾èµ– Qwen å®¢æˆ·ç«¯ï¼Œè€Œæ˜¯é€šè¿‡ `LlmCompressor` å›è°ƒè°ƒç”¨ LLMï¼š
+
+```cpp
+using LlmCompressor = std::function<std::string(
+    const std::string& system_prompt,
+    const std::string& user_prompt)>;
+```
+
+è¿™æ ·æ ¸å¿ƒæ¨¡å—å¯ä»¥ç‹¬ç«‹æµ‹è¯•ï¼Œè¿è¡Œæ—¶å†ç”± Orchestrator æˆ– Agent æ¨¡æ¿æŠŠç°æœ‰ `QwenClient::chat()` æ³¨å…¥è¿›å»ã€‚
+
+### è®°å¿†åˆ†å±‚
+
+| å±‚çº§ | æ¥æº | ä½œç”¨ | å­˜å‚¨æ–¹å¼ |
+|---|---|---|---|
+| å·¥ä½œè®°å¿† | Redis ä¸­æœ€è¿‘åŸå§‹æ¶ˆæ¯ | ä¿ç•™å½“å‰ä»»åŠ¡çš„è¿ç»­å¯¹è¯ç»†èŠ‚ | è¿è¡Œæ—¶ä» `a2a:history:<contextId>` è¯»å– |
+| çŸ­æœŸæ‘˜è¦ | LLM å‹ç¼©è¾ƒæ—©å†å² | ä¿å­˜æœ¬è½®ä¼šè¯å†…å·²ç»ä¸é€‚åˆå…¨æ–‡æ³¨å…¥çš„ä¿¡æ¯ | `short_term_summary` å†™å…¥ JSON æ–‡ä»¶ |
+| é•¿æœŸè®°å¿† | LLM ä»çŸ­æœŸæ‘˜è¦æå– | è·¨ä¼šè¯ä¿ç•™ç¨³å®šä¿¡æ¯ï¼Œä¾‹å¦‚ç ”ç©¶æ–¹å‘å’Œåå¥½ | `long_term_memories` å†™å…¥ JSON æ–‡ä»¶ |
+
+ä¸Šä¸‹æ–‡æ³¨å…¥é¡ºåºï¼š
+
+```text
+system: åŸºç¡€è§’è‰²ä¸è¡Œä¸ºçº¦æŸ
+system: é•¿æœŸæ ¸å¿ƒè®°å¿†ï¼Œåªç”¨äºç†è§£ç”¨æˆ·èƒŒæ™¯å’Œåå¥½
+system: è¿‘æœŸä¼šè¯æ‘˜è¦ï¼Œåªç”¨äºè¡¥è¶³ä¸Šä¸‹æ–‡
+user/assistant: æœ€è¿‘å·¥ä½œè®°å¿†åŸæ–‡
+user: å½“å‰ç”¨æˆ·è¾“å…¥
+```
+
+é•¿æœŸè®°å¿†å’Œè¿‘æœŸæ‘˜è¦éƒ½æ˜ç¡®æ ‡æ³¨â€œä¸æ˜¯æ–°çš„ç”¨æˆ·æŒ‡ä»¤â€ï¼Œé¿å…å†å²ä¿¡æ¯è¦†ç›–å½“å‰ç”¨æˆ·è¯·æ±‚ã€‚
+
+### è¿è¡Œæµç¨‹
+
+åŒæ­¥è¯·æ±‚ `message/send` çš„ä¸Šä¸‹æ–‡æµç¨‹ï¼š
+
+```text
+å®¢æˆ·ç«¯è¯·æ±‚
+  -> Orchestrator / ä¸“ä¸š Agent è§£æ AgentMessage
+  -> save_message(context_id, user_message)
+  -> RedisTaskStore::add_history_message()
+  -> ContextMemoryManager::observe_conversation()
+       -> åˆ¤æ–­æ˜¯å¦è¶…è¿‡å·¥ä½œçª—å£
+       -> LLM å‹ç¼©è¾ƒæ—©å†å²ä¸º short_term_summary
+       -> LLM ä»çŸ­æœŸæ‘˜è¦æå– long_term_memories
+       -> æŒ‰ context_id å†™å…¥é•¿æœŸè®°å¿†æ–‡ä»¶
+  -> build_context_messages()
+       -> è¯»å–é•¿æœŸè®°å¿†
+       -> æ³¨å…¥çŸ­æœŸæ‘˜è¦
+       -> è¿½åŠ æœ€è¿‘å·¥ä½œè®°å¿†
+  -> è°ƒç”¨ LLM æˆ–å·¥å…·è°ƒç”¨å›ç¯
+  -> save_message(context_id, assistant_message)
+  -> å†æ¬¡åˆ·æ–°è®°å¿†
+```
+
+æµå¼è¯·æ±‚ `message/stream` ä¹Ÿå¤ç”¨åŒä¸€å¥—ä¿å­˜ä¸åˆ·æ–°é€»è¾‘ï¼Œåªæ˜¯åœ¨æœ€ç»ˆå®Œæ•´å›å¤ç”Ÿæˆåå†ä¿å­˜ Agent å›å¤ï¼Œé¿å…æŠŠä¸­é—´ chunk å†™å…¥å†å²ã€‚
+
+### é•¿æœŸè®°å¿†æ–‡ä»¶
+
+é•¿æœŸè®°å¿†ä»¥ `context_id` å‘½åæ–‡ä»¶ï¼Œé»˜è®¤ç›®å½•ï¼š
+
+```text
+build/runtime/context_memory/<sanitized_context_id>.json
+```
+
+`context_id` ä¼šå…ˆåšè·¯å¾„å®‰å…¨æ¸…ç†ï¼š
+
+- å­—æ¯ã€æ•°å­—ã€`-`ã€`_` ä¿ç•™ã€‚
+- å…¶ä»–å­—ç¬¦æ›¿æ¢ä¸º `_`ã€‚
+- è¿‡é•¿æ–‡ä»¶åä¼šæˆªæ–­ã€‚
+- JSON å†…ä»ä¿ç•™åŸå§‹ `context_id`ï¼Œç”¨äºå®¡è®¡å’Œå±•ç¤ºã€‚
+
+æ–‡ä»¶ç»“æ„ï¼š
+
+```json
+{
+  "version": 1,
+  "context_id": "lab/user-001",
+  "sanitized_context_id": "lab_user-001",
+  "short_term_summary": "ç”¨æˆ·ç ”ç©¶æ–¹å‘æ˜¯ Multi Agent ç§‘ç ”åä½œç³»ç»Ÿ...",
+  "consolidated_message_count": 12,
+  "updated_at": "2026-06-07T10:20:30+0800",
+  "long_term_memories": [
+    {
+      "content": "ç”¨æˆ·ç ”ç©¶æ–¹å‘æ˜¯ Multi Agent ç§‘ç ”åä½œç³»ç»Ÿ",
+      "category": "research_direction",
+      "source": "llm_extract",
+      "importance": 9,
+      "hit_count": 1,
+      "created_at": "2026-06-07T10:20:30+0800",
+      "updated_at": "2026-06-07T10:20:30+0800"
+    }
+  ]
+}
+```
+
+`consolidated_message_count` è¡¨ç¤ºå·²æœ‰å¤šå°‘æ¡ Redis å†å²è¢«å‹ç¼©è¿›çŸ­æœŸæ‘˜è¦ã€‚æ„é€ ä¸Šä¸‹æ–‡æ—¶ï¼Œè¿™äº›å·²å‹ç¼©æ—§æ¶ˆæ¯ä¸ä¼šå†é‡å¤è¿›å…¥å·¥ä½œè®°å¿†ã€‚
+
+### LLM æ‘˜è¦ä¸é•¿æœŸæå–
+
+çŸ­æœŸæ‘˜è¦ prompt è¦æ±‚ LLM åªä¿ç•™å¯¹åç»­åä½œæœ‰ç”¨çš„ä¿¡æ¯ï¼Œé‡ç‚¹åŒ…æ‹¬ï¼š
+
+1. ç”¨æˆ·ä½œä¸ºç§‘ç ”äººçš„ç ”ç©¶æ–¹å‘ã€è¯¾é¢˜èƒŒæ™¯ã€å½“å‰é¡¹ç›®ç›®æ ‡ã€‚
+2. ç”¨æˆ·å¯¹æŠ€æœ¯æ ˆã€å®ç°æ–¹å¼ã€ä»£ç é£æ ¼ã€ç¼–è¯‘éªŒè¯å’Œå›ç­”ç²’åº¦çš„åå¥½ã€‚
+3. å·²ç¡®è®¤çš„è®¾è®¡å†³ç­–ã€çº¦æŸæ¡ä»¶ã€å¾…åŠäº‹é¡¹å’Œé£é™©ã€‚
+4. ä¸ C++/gRPCã€A2Aã€MCPã€RAGã€Multi Agentã€ç§‘ç ”èµ„æ–™æ£€ç´¢ã€ä¼šè®®çºªè¦å’ŒæœåŠ¡å™¨è¿ç»´ååŒæœ‰å…³çš„ä¸Šä¸‹æ–‡ã€‚
+
+é•¿æœŸè®°å¿†æå–è¦æ±‚ LLM è¿”å› JSONï¼š
+
+```json
+{
+  "memories": [
+    {
+      "content": "ç”¨æˆ·åå¥½åœ¨æœ¬é¡¹ç›®å†…ç›´æ¥ç¼–è¯‘éªŒè¯",
+      "category": "preference",
+      "importance": 8
+    }
+  ]
+}
+```
+
+æ”¯æŒçš„é•¿æœŸè®°å¿†åˆ†ç±»åŒ…æ‹¬ï¼š
+
+| åˆ†ç±» | å«ä¹‰ |
+|---|---|
+| `research_direction` | ç§‘ç ”æ–¹å‘æˆ–è¯¾é¢˜èƒŒæ™¯ |
+| `preference` | æŠ€æœ¯ã€å›ç­”ã€åä½œæˆ–ä»£ç é£æ ¼åå¥½ |
+| `decision` | å·²ç¡®è®¤çš„é•¿æœŸå†³ç­– |
+| `constraint` | é•¿æœŸçº¦æŸ |
+| `project_context` | é¡¹ç›®èƒŒæ™¯å’Œæ¶æ„ä¿¡æ¯ |
+| `workflow` | ç”¨æˆ·ç¨³å®šå·¥ä½œæµ |
+| `other` | å…¶ä»–ç¨³å®šè®°å¿† |
+
+### æ¥å…¥ä½ç½®
+
+Orchestrator æ¥å…¥ï¼š
+
+```cpp
+context_memory_manager_.set_llm_compressor(
+    [this](const std::string& system_prompt,
+           const std::string& user_prompt) {
+        return qwen_client_.chat(system_prompt, user_prompt);
+    });
+```
+
+é€šç”¨é—®ç­”é€šè¿‡ `build_general_messages()` æ„é€ ç»“æ„åŒ–æ¶ˆæ¯åˆ—è¡¨ï¼Œä¸å†æŠŠå†å²ç›´æ¥æ‹¼åˆ°åŸºç¡€ system prompt é‡Œã€‚
+
+ä¸“ä¸š Agent æ¥å…¥ï¼š
+
+- `A2AAgentRuntime::save_message()` å†™å…¥ Redis åè°ƒç”¨ `refresh_context_memory()`ã€‚
+- `ReActAgentTemplate::run_react_loop()` ä½¿ç”¨ `build_history_messages()` è·å–åˆ†å±‚åçš„ä¸Šä¸‹æ–‡ã€‚
+- `MathAgent` åœ¨æ•°å­¦è¯·æ±‚æ”¹å†™é˜¶æ®µè°ƒç”¨ `build_history_text()`ï¼Œæ‹¿åˆ°çš„æ˜¯é•¿æœŸè®°å¿†ã€è¿‘æœŸæ‘˜è¦å’Œæœ€è¿‘å·¥ä½œè®°å¿†çš„ç»„åˆæ–‡æœ¬ã€‚
+
+### å¤±è´¥é™çº§
+
+è®°å¿†ç®¡ç†å™¨éµå¾ªâ€œå¤±è´¥ä¸å½±å“å½“å‰è¯·æ±‚â€çš„åŸåˆ™ï¼š
+
+| åœºæ™¯ | å¤„ç† |
+|---|---|
+| LLM æ‘˜è¦å¤±è´¥ | è®°å½•é”™è¯¯å’Œç»Ÿè®¡ï¼Œä¸æ¨è¿› `consolidated_message_count` |
+| é•¿æœŸè®°å¿† JSON è§£æå¤±è´¥ | ä¸¢å¼ƒæœ¬æ¬¡é•¿æœŸæå–ï¼Œä¿ç•™å·²æœ‰è®°å¿† |
+| è®°å¿†æ–‡ä»¶è¯»å–å¤±è´¥ | å›é€€ä¸ºç©ºè®°å¿†ï¼Œåªä½¿ç”¨ Redis å·¥ä½œè®°å¿† |
+| è®°å¿†æ–‡ä»¶ä¿å­˜å¤±è´¥ | è®°å½•é”™è¯¯ï¼Œä¸å½±å“å½“å‰ LLM è°ƒç”¨ |
+| é•¿æœŸè®°å¿†é‡å¤ | æŒ‰å†…å®¹å½’ä¸€åŒ–å»é‡ï¼Œæå‡ `hit_count` å’Œé‡è¦åº¦ |
+
+### æµ‹è¯•ä¸ç¼–è¯‘
+
+æ–°å¢æµ‹è¯•ç›®æ ‡ï¼š
+
+```bash
+cmake --build build --target test_context_memory_manager -j$(nproc)
+./build/tests/test_context_memory_manager
+ctest --test-dir build -R ContextMemoryManagerTest --output-on-failure
+```
+
+ç¼–è¯‘éªŒè¯ï¼š
+
+```bash
+cmake -S . -B build
+cmake --build build --target ai_orchestrator -j$(nproc)
+cmake --build build --target ai_math_agent -j$(nproc)
+cmake --build build -j$(nproc)
 ```

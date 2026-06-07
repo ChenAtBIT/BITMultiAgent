@@ -7,12 +7,14 @@ cmake_minimum_required(VERSION 3.15)
 # Source files
 set(ORCHESTRATOR_SOURCES
     src/agent_router.cpp
+    src/context_memory_manager.cpp
 )
 
 # Header files
 set(ORCHESTRATOR_HEADERS
     include/agent_rpc/orchestrator/agent_info.h
     include/agent_rpc/orchestrator/agent_router.h
+    include/agent_rpc/orchestrator/context_memory_manager.h
 )
 
 # Create library

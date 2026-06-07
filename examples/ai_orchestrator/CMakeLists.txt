@@ -50,6 +50,7 @@ target_include_directories(ai_math_agent PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../a2a/include/a2a/examples
     ${CMAKE_CURRENT_SOURCE_DIR}/../../a2a/third_party
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../orchestrator/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../mcp_client/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../common/include
     ${CMAKE_BINARY_DIR}/proto
@@ -58,6 +59,37 @@ target_include_directories(ai_math_agent PRIVATE
 
 target_link_libraries(ai_math_agent
     a2a
+    orchestrator
+    agent_rpc_mcp
+    proto_lib
+    ${GRPC_LIBRARIES}
+    ${PROTOBUF_LIBRARIES}
+    CURL::libcurl
+    Threads::Threads
+    ${HIREDIS_LIBRARIES}
+)
+
+# General Agent 可执行文件（通用问题专用，独立回答，不进行工具调用）
+add_executable(ai_general_agent
+    general_agent_main.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../a2a/src/examples/redis_task_store.cpp
+)
+
+target_include_directories(ai_general_agent PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../a2a/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../a2a/include/a2a/examples
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../a2a/third_party
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../orchestrator/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../mcp_client/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../common/include
+    ${CMAKE_BINARY_DIR}/proto
+    ${HIREDIS_INCLUDE_DIRS}
+)
+
+target_link_libraries(ai_general_agent
+    a2a
+    orchestrator
     agent_rpc_mcp
     proto_lib
     ${GRPC_LIBRARIES}

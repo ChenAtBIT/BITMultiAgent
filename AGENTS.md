@@ -29,9 +29,13 @@ if (condition) {
 
 3. 要对关键代码行进行注释，使用中文注释。
 
-# 编译
+
+## 项目优化
+- 当添加新的子 Agent 时，还需在 README.md 的架构图、完整部署指南里添加对应的部署步骤；start_system.sh 里添加对应的启动命令
+
+## 编译
 - 请直接在本项目执行编译（不要在沙箱内）
-- 1. 编译主项目
+- 编译主项目
 ```bash
 # 配置并全量编译
 cmake -S . -B build
@@ -40,4 +44,3 @@ cmake --build build -j$(nproc)
 # 单独编译
 cmake --build build --target ai_orchestrator -j$(nproc) 
 ```
-

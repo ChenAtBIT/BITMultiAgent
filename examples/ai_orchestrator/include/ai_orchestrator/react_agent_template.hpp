@@ -14,6 +14,7 @@
 #include <a2a/models/task_status.hpp>
 
 #include <agent_rpc/mcp/mcp_agent_integration.h>
+#include <agent_rpc/orchestrator/context_memory_manager.h>
 
 #include <algorithm>
 #include <chrono>
@@ -89,8 +90,15 @@ public:
         : config_(config)
         , task_store_(std::make_shared<a2a::RedisTaskStore>(config.redis_host, config.redis_port))
         , qwen_client_(config.api_key)
+        , context_memory_manager_()
         , registry_client_(config.registry_url)
         , mcp_integration_(std::make_unique<agent_rpc::mcp::MCPAgentIntegration>()) {
+        context_memory_manager_.set_llm_compressor(
+            [this](const std::string& system_prompt,
+                   const std::string& user_prompt) {
+                return qwen_client_.chat(system_prompt, user_prompt);
+            });
+
         if (!mcp_integration_->initialize(config_.mcp_config)) {
             std::cerr << log_prefix() << " MCP 初始化失败，将在无 MCP 模式下运行" << std::endl;
         } else if (mcp_integration_->isAvailable()) {
@@ -171,15 +179,16 @@ protected:
      */
     std::vector<QwenMessage> build_history_messages(const std::string& context_id,
                                                     size_t limit) const {
-        std::vector<QwenMessage> messages;
-        const auto history = task_store_->get_history(context_id, static_cast<int>(limit));
-        messages.reserve(history.size());
+        const auto memory_messages =
+            build_managed_context_messages(context_id, limit);
 
-        for (const auto& message : history) {
+        std::vector<QwenMessage> messages;
+        messages.reserve(memory_messages.size());
+
+        for (const auto& message : memory_messages) {
             QwenMessage qwen_message;
-            qwen_message.role =
-                (message.role() == a2a::MessageRole::User) ? "user" : "assistant";
-            qwen_message.content = extract_text_from_message(message);
+            qwen_message.role = message.role;
+            qwen_message.content = message.content;
             messages.push_back(std::move(qwen_message));
         }
 
@@ -193,13 +202,11 @@ protected:
      * @return 文本形式的历史记录
      */
     std::string build_history_text(const std::string& context_id, size_t limit) const {
-        const auto history = task_store_->get_history(context_id, static_cast<int>(limit));
+        const auto history = build_managed_context_messages(context_id, limit);
         std::string history_text;
 
         for (const auto& message : history) {
-            const std::string role =
-                (message.role() == a2a::MessageRole::User) ? "user" : "assistant";
-            history_text += role + ": " + extract_text_from_message(message) + "\n";
+            history_text += message.role + ": " + message.content + "\n";
         }
 
         return history_text;
@@ -219,12 +226,27 @@ protected:
             task_store_->set_task(task);
         }
         task_store_->add_history_message(context_id, message);
+        refresh_context_memory(context_id);
     }
 
     /**
      * @brief 访问 Qwen 客户端
      */
     QwenClient& qwen_client() { return qwen_client_; }
+
+    /**
+     * @brief 读取并构造分层上下文消息
+     * @param context_id 会话上下文 ID
+     * @param limit 最近原始历史读取数量，0 表示读取全部历史
+     * @return 长期记忆、短期摘要和工作记忆组成的消息列表
+     */
+    std::vector<agent_rpc::orchestrator::ContextMemoryMessage>
+    build_managed_context_messages(const std::string& context_id,
+                                   size_t limit) const {
+        const auto raw_history =
+            load_context_memory_history(context_id, static_cast<int>(limit));
+        return context_memory_manager_.build_context_messages(context_id, raw_history);
+    }
 
     /**
      * @brief 访问 MCP 集成器
@@ -262,6 +284,52 @@ protected:
     }
 
 private:
+    /**
+     * @brief 将 A2A 消息转换为记忆管理器消息
+     * @param message A2A 消息
+     * @return 记忆管理器消息
+     */
+    static agent_rpc::orchestrator::ContextMemoryMessage to_memory_message(
+        const a2a::AgentMessage& message) {
+        std::string role = "assistant";
+        if (message.role() == a2a::MessageRole::User) {
+            role = "user";
+        } else if (message.role() == a2a::MessageRole::System) {
+            role = "system";
+        }
+
+        return {role, extract_text_from_message(message)};
+    }
+
+    /**
+     * @brief 读取 Redis 历史并转换为记忆管理器格式
+     * @param context_id 会话上下文 ID
+     * @param max_length 最大读取数量，0 表示全部
+     * @return 转换后的消息列表
+     */
+    std::vector<agent_rpc::orchestrator::ContextMemoryMessage>
+    load_context_memory_history(const std::string& context_id,
+                                int max_length) const {
+        const auto history = task_store_->get_history(context_id, max_length);
+        std::vector<agent_rpc::orchestrator::ContextMemoryMessage> messages;
+        messages.reserve(history.size());
+
+        for (const auto& message : history) {
+            messages.push_back(to_memory_message(message));
+        }
+
+        return messages;
+    }
+
+    /**
+     * @brief 刷新指定上下文的分层记忆
+     * @param context_id 会话上下文 ID
+     */
+    void refresh_context_memory(const std::string& context_id) {
+        const auto history = load_context_memory_history(context_id, 0);
+        context_memory_manager_.observe_conversation(context_id, history);
+    }
+
     /**
      * @brief 从消息对象中提取首个文本分片
      * @param message A2A 消息
@@ -463,6 +531,7 @@ private:
     AgentRuntimeConfig config_;
     std::shared_ptr<a2a::RedisTaskStore> task_store_;
     QwenClient qwen_client_;
+    agent_rpc::orchestrator::ContextMemoryManager context_memory_manager_;
     RegistryClient registry_client_;
     std::unique_ptr<agent_rpc::mcp::MCPAgentIntegration> mcp_integration_;
 };
