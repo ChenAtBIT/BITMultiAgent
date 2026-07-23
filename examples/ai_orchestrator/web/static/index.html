@@ -11,7 +11,7 @@
       <header class="topbar">
         <div>
           <p class="eyebrow">agent-dag-orchestrator</p>
-          <h1>Dynamic DAG Agent Console / 动态 DAG Agent 演示台</h1>
+          <h1>Dynamic DAG-MultiAgent Console /动态 DAG-MultiAgent 演示台</h1>
         </div>
         <div class="run-meta">
           <span id="connectionStatus" class="status-pill idle">Idle</span>
@@ -22,14 +22,14 @@
       <section class="control-band">
         <label class="task-field">
           <span>Task / 任务</span>
-          <textarea id="taskInput" rows="3">分析短视频市场竞争格局，并输出一份结构清晰的报告。</textarea>
+          <textarea id="taskInput" rows="3">分析 Agent 工程开发技术演进，并输出一份结构清晰的报告。</textarea>
         </label>
         <div class="control-row">
           <label class="select-field">
             <span>Agent Mode / Agent 模式</span>
             <select id="agentModeSelect">
               <option value="manual">Manual Agents / 人工编写</option>
-              <option value="auto">Auto-create Agents / 自动生成</option>
+              <option value="auto" selected>Auto-create Agents / 自动生成</option>
             </select>
           </label>
           <label class="input-field">
