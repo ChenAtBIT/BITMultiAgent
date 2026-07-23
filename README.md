@@ -1,43 +1,49 @@
-## 项目概述
-项目背景：针对科研学者在资料检索场景中存在的信息分散、人工处理效率低等问题，实现基于gRPC+A2A+MCP的Multi Agent协作系统。
+# C++ DAG Web 编排器
 
-主要工作：
-- 系统通信框架：构建Client -> RPC Server -> A2A Adapter -> Orchestrator -> Worker Agent -> MCP Tool的完整调用链路。
+`ai_orchestrator` 现在是一个单进程 C++ Web 服务。它复用 Agent-DAG-Orchestrator 的动态 Agent、Planner、DAG 调度、ReAct Prompt、skill 注入和 Retry 交互；旧的意图识别与多进程路由不再是网页主流程。
 
-- 动态 DAG 编排：遵循A2A协议实现Agent间通信；针对输入任务，系统先按任务需求动态生成本次所需Agent及其依赖关系，再通过在线拓扑调度按DAG并发执行各节点，突破单Agent在上下文容量与能力边界上的限制。
+## 启动
 
-- 任务规划：设计“思考 -> 工具调用 -> 观察 -> 再思考”的ReAct闭环执行范式，增强Agent对复杂任务的分解、推理和工具调用能力。
-
-- 分层记忆管理器：将对话信息划分为即时工作上下文、会话级短期摘要和持久化长期核心记忆三层，分层控制Token开销，并支持跨轮次、跨会话的知识延续；在10组长上下文测试中，将平均Prompt长度从75120压至31456，平均压缩率达58.1%。
-
-- Agent能力扩展机制：基于MCP协议构建工具调用框架（MCP Client/Server），集成文件读写、服务器巡检、文档向量化与检索等20+个工具，可通过运行时动态库加载实现可插拔扩展。
-
-- 智能工具选择：基于领域工具白名单，设计并实现检索增强生成（RAG）Top-k工具按需选择机制，使100条工具类请求的平均工具注入数由6个降至2.5个，整体工具调用成功率提升8%。
-
-### 项目结构
-
-```text
-agent-communication/
-├── build/
-│   ├── mcp_client/                     # MCP 客户端库与 RAG-MCP 构建产物
-│   ├── examples/                       # 示例程序二进制
-│   ├── mcp_server/                     # MCP Server 与插件构建产物
-│   ├── RPC_server/                     # rpc_server 等主程序产物
-│   ├── RPC_client/                     # rpc_client 等客户端产物
-│   └── runtime/
-│       ├── examples/ai_orchestrator/   # 启动脚本生成的日志与 PID
-│       └── mcp_server/                 # MCP Server 运行日志
-├── common/                             # 公共基础能力
-├── proto/                              # 协议定义
-├── a2a/                                # A2A 协议实现
-├── a2a_adapter/                        # RPC <-> A2A 适配层
-├── mcp_client/                         # MCP 客户端与 RAG-MCP 能力
-├── orchestrator/                       # Agent 编排层
-├── registry/                           # 服务注册发现
-├── RPC_server/                         # RPC 服务层
-├── RPC_client/                         # RPC 客户端入口
-├── mcp_server/                         # MCP Server 源码与插件源码
-├── examples/                           # 示例源码
-├── tests/                              # 测试源码
-└── docs/                               # 文档
+```bash
+export QWEN_API_KEY=sk-your-key
+export QWEN_API_URL=https://your-compatible-endpoint/compatible-mode/v1
+./examples/ai_orchestrator/start_system.sh
 ```
+
+默认访问地址为 `http://127.0.0.1:8000`。`QWEN_API_URL` 可以是兼容接口的 base URL，也可以直接是 `/chat/completions` URL；不设置时沿用 B 原有 DashScope 地址。可通过 `PORT` 修改端口。
+
+停止服务：
+
+```bash
+./examples/ai_orchestrator/stop_system.sh
+```
+
+启动脚本会自动配置/构建 `build`，并只启动一个 Web 进程。运行日志统一位于项目根目录的 `log/`：`service.log` 保存 Web/DAG 命令行日志，`agent_<agent_id>.log` 保存对应 Agent 的 ReAct 对话，`planner.log` 和 `agent_designer.log` 保存 Planner/Agent Designer 的模型请求。每次启动脚本时会清空并重新创建 `log/` 内容；服务已在运行时不会清空当前日志。
+
+Agent 日志按 JSON 记录每次模型请求，包含 `phase`、`run_id`、Agent、轮次、temperature、提交给模型的完整 `request.messages` 和原始 `response`。API Key 不写入这些日志。
+如果输入资料或兼容接口返回中出现非法 UTF-8 字节，日志会将对应字节保留为 `\\xHH` 转义；日志异常不会再改变 Agent 节点的执行结果。
+
+当前版本暂时关闭 `limit_text` 的长度截断，ReAct 记忆、依赖输出和 Agent 输出会完整传递；仅对非法 UTF-8 字节做传输安全转义。
+当前 ReAct 上下文压缩默认关闭，轮次之间保留完整累积记忆；最大 ReAct 轮次限制仍然有效。
+
+## Web API
+
+- `GET /health`：健康检查。
+- `GET /api/agents`：读取默认 Agent 池。
+- `POST /api/agents/draft`：根据任务生成可编辑 Agent 草稿。
+- `POST /api/runs`：创建 DAG 运行。
+- `GET /api/runs/{run_id}`：轮询运行状态、Plan、事件和输出。
+- `POST /api/runs/{run_id}/agents/{agent_id}/retry`：携带编辑后的输出和反馈重跑单节点。
+- `POST /api/materials/parse`：解析 MD/TXT 的 base64 文本资料。
+
+前端不接收 API Key。模型配置从进程环境读取，运行快照会隐藏资料原文和密钥。
+
+## 测试
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build -j$(nproc)
+ctest --test-dir build --output-on-failure
+```
+
+`tests/test_dag_orchestrator.cpp` 使用注入的确定性模型，不访问网络，也不需要 API Key。

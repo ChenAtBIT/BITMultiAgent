@@ -304,3 +304,21 @@ target_include_directories(test_agent_communication PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}/../proto
 )
 add_test(NAME AgentCommunicationIntegrationTest COMMAND test_agent_communication)
+
+# Native C++ DAG Web runtime tests. These inject a deterministic model and do
+# not access the network or require QWEN_API_KEY.
+add_executable(test_dag_orchestrator
+    test_dag_orchestrator.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../examples/ai_orchestrator/dag_runtime.cpp
+)
+target_include_directories(test_dag_orchestrator PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../examples/ai_orchestrator/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../a2a/third_party
+)
+target_link_libraries(test_dag_orchestrator
+    GTest::gtest
+    GTest::gtest_main
+    CURL::libcurl
+    Threads::Threads
+)
+add_test(NAME DagOrchestratorTest COMMAND test_dag_orchestrator)

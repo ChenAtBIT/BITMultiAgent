@@ -1,5 +1,5 @@
-# AI Orchestrator Example
-# 基于 a2a-cpp/examples/multi_agent_demo 的集成示例
+# C++ DAG Web Orchestrator
+# 新网页主入口；旧 A2A 专业 Agent 示例仍作为独立兼容目标保留。
 
 cmake_minimum_required(VERSION 3.15)
 
@@ -9,8 +9,8 @@ pkg_check_modules(HIREDIS hiredis)
 
 # Orchestrator 可执行文件
 add_executable(ai_orchestrator
-    orchestrator_main.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../a2a/src/examples/redis_task_store.cpp
+    dag_web_main.cpp
+    dag_runtime.cpp
 )
 
 target_include_directories(ai_orchestrator PRIVATE
@@ -22,21 +22,19 @@ target_include_directories(ai_orchestrator PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../orchestrator/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../mcp_client/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../common/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../mcp_server/include
     ${CMAKE_BINARY_DIR}/proto
     ${HIREDIS_INCLUDE_DIRS}
 )
 
 target_link_libraries(ai_orchestrator
-    a2a
-    a2a_adapter
-    orchestrator
-    agent_rpc_mcp
-    proto_lib
-    ${GRPC_LIBRARIES}
-    ${PROTOBUF_LIBRARIES}
     CURL::libcurl
     Threads::Threads
-    ${HIREDIS_LIBRARIES}
+)
+
+target_compile_definitions(ai_orchestrator PRIVATE
+    AGENT_DAG_WEB_ROOT="${CMAKE_CURRENT_SOURCE_DIR}/web"
+    AGENT_DAG_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
 )
 
 # Math Agent 可执行文件

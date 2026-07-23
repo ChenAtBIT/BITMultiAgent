@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>agent-dag-orchestrator</title>
+    <link rel="stylesheet" href="/static/styles.css?v=9" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">agent-dag-orchestrator</p>
+          <h1>Dynamic DAG Agent Console / 动态 DAG Agent 演示台</h1>
+        </div>
+        <div class="run-meta">
+          <span id="connectionStatus" class="status-pill idle">Idle</span>
+          <span id="runIdLabel" class="run-id">No run</span>
+        </div>
+      </header>
+
+      <section class="control-band">
+        <label class="task-field">
+          <span>Task / 任务</span>
+          <textarea id="taskInput" rows="3">分析短视频市场竞争格局，并输出一份结构清晰的报告。</textarea>
+        </label>
+        <div class="control-row">
+          <label class="select-field">
+            <span>Agent Mode / Agent 模式</span>
+            <select id="agentModeSelect">
+              <option value="manual">Manual Agents / 人工编写</option>
+              <option value="auto">Auto-create Agents / 自动生成</option>
+            </select>
+          </label>
+          <label class="input-field">
+            <span>ReAct Rounds / ReAct 轮次</span>
+            <input id="maxAgentRoundsInput" type="number" min="1" max="10" value="5" />
+          </label>
+          <label id="maxDynamicAgentsField" class="input-field hidden">
+            <span>Max Agents / 最大 Agent</span>
+            <input id="maxDynamicAgentsInput" type="number" min="3" max="10" value="6" />
+          </label>
+          <button id="runButton" class="primary-button">Run / 运行</button>
+        </div>
+        <label class="reference-field">
+          <span>Materials / 资料补充</span>
+          <textarea id="referenceInput" rows="3" placeholder="粘贴行业资料、数据口径、产品信息、术语表或约束条件"></textarea>
+        </label>
+        <div class="agent-toolbar">
+          <strong>Agent Pool / Agent 池</strong>
+          <div class="agent-actions">
+            <button id="generateAgentsButton" class="secondary-button hidden" type="button">Generate Agents / 生成 Agent</button>
+            <button id="addAgentButton" class="secondary-button" type="button">Add Agent / 新增 Agent</button>
+          </div>
+        </div>
+        <div id="agentPicker" class="agent-picker" aria-label="Agents"></div>
+      </section>
+
+      <section class="workspace">
+        <div class="graph-panel">
+          <div class="panel-head">
+            <h2>DAG</h2>
+            <span id="graphSummary">0 nodes</span>
+          </div>
+          <div class="graph-canvas">
+            <svg id="dagSvg" role="img" aria-label="DAG graph"></svg>
+          </div>
+        </div>
+
+        <aside class="event-panel">
+          <div class="panel-head">
+            <h2>Events / 事件</h2>
+            <button id="clearEventsButton" class="icon-button" title="Clear events">Clear</button>
+          </div>
+          <ol id="eventList" class="event-list"></ol>
+        </aside>
+      </section>
+
+      <section class="details-grid">
+        <div class="plan-panel">
+          <div class="panel-head">
+            <h2>Plan JSON / 执行计划</h2>
+          </div>
+          <pre id="planJson" class="code-block">[]</pre>
+        </div>
+
+        <div class="outputs-panel">
+          <div class="panel-head">
+            <h2>Outputs & Retry / 输出与重试</h2>
+          </div>
+          <div id="outputsList" class="outputs-list"></div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/static/app.js?v=10"></script>
+  </body>
+</html>
