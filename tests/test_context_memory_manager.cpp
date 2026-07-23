@@ -20,7 +20,7 @@ namespace {
  */
 std::string make_test_memory_dir(const std::string& name) {
     const std::filesystem::path dir =
-        std::filesystem::path(AGENT_RPC_PROJECT_SOURCE_DIR) /
+        std::filesystem::path(DAG_MULTI_AGENT_PROJECT_SOURCE_DIR) /
         "build" / "runtime" / "tests" / "context_memory_manager" / name;
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);

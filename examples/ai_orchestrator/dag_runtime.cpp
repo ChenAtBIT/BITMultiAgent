@@ -200,6 +200,46 @@ std::string output_text(const json& message) {
     return message["content"].dump();
 }
 
+/**
+ * @brief 提取模型网关返回的安全错误信息
+ * @param response_json 模型网关响应 JSON
+ * @param http_status HTTP 状态码
+ * @return 不包含请求密钥的错误描述
+ */
+std::string model_api_error(const json& response_json, long http_status) {
+    std::ostringstream out;
+    out << "Qwen API error";
+    if (http_status > 0) out << " (HTTP " << http_status << ")";
+
+    if (!response_json.is_object() || !response_json.contains("error")) {
+        out << ": response is not valid Chat Completions JSON";
+        return out.str();
+    }
+
+    const auto& error = response_json["error"];
+    if (error.is_string()) {
+        out << ": " << error.get<std::string>();
+        return out.str();
+    }
+    if (!error.is_object()) {
+        out << ": unknown provider error";
+        return out.str();
+    }
+
+    if (error.contains("code")) {
+        out << " [";
+        if (error["code"].is_string()) out << error["code"].get<std::string>();
+        else out << error["code"].dump();
+        out << "]";
+    }
+    if (error.contains("message") && error["message"].is_string()) {
+        out << ": " << error["message"].get<std::string>();
+    } else if (error.contains("type") && error["type"].is_string()) {
+        out << ": " << error["type"].get<std::string>();
+    }
+    return out.str();
+}
+
 size_t curl_write(void* contents, size_t size, size_t count, void* user_data) {
     auto* output = static_cast<std::string*>(user_data);
     output->append(static_cast<const char*>(contents), size * count);
@@ -307,25 +347,6 @@ json SkillActivation::public_json() const {
             {"score", score}, {"reason", reason}};
 }
 
-void ToolRegistry::add(ToolDefinition definition, ToolExecutor executor) {
-    if (definition.name.empty() || !executor) throw std::invalid_argument("invalid tool definition");
-    entries_[definition.name] = {std::move(definition), std::move(executor)};
-}
-
-std::vector<ToolDefinition> ToolRegistry::definitions() const {
-    std::vector<ToolDefinition> result;
-    for (const auto& [_, entry] : entries_) result.push_back(entry.definition);
-    return result;
-}
-
-ToolResult ToolRegistry::execute(const std::string& name, const std::string& arguments_json) const {
-    const auto it = entries_.find(name);
-    if (it == entries_.end()) return {false, {}, "tool is not registered: " + name};
-    return it->second.executor(name, arguments_json);
-}
-
-bool ToolRegistry::empty() const { return entries_.empty(); }
-
 QwenChatModel::QwenChatModel(std::string api_key, std::string model, std::string endpoint)
     : api_key_(std::move(api_key)), model_(std::move(model)), endpoint_(std::move(endpoint)) {
     curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -359,13 +380,16 @@ std::string QwenChatModel::complete(const std::vector<ChatMessage>& messages, do
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 90L);
     const CURLcode code = curl_easy_perform(curl);
+    long http_status = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_status);
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
     if (code != CURLE_OK) throw std::runtime_error(std::string("Qwen request failed: ") + curl_easy_strerror(code));
 
     const auto parsed = safe_json_parse(response);
-    if (!parsed.is_object() || parsed.contains("error")) {
-        throw std::runtime_error("Qwen API returned an error");
+    if (http_status < 200 || http_status >= 300 ||
+        !parsed.is_object() || parsed.contains("error")) {
+        throw std::runtime_error(model_api_error(parsed, http_status));
     }
     if (!parsed.contains("choices") || !parsed["choices"].is_array() || parsed["choices"].empty()) {
         throw std::runtime_error("Qwen API returned an invalid response");

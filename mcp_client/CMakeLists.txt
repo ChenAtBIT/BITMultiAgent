@@ -27,8 +27,10 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(JSONCPP REQUIRED jsoncpp)
 
 # 链接依赖库
-target_link_libraries(agent_rpc_mcp PRIVATE
-    agent_rpc_common
+target_link_libraries(agent_rpc_mcp
+    PUBLIC
+        agent_common
+    PRIVATE
     ${JSONCPP_LIBRARIES}
     Threads::Threads
     CURL::libcurl
@@ -37,7 +39,7 @@ target_link_libraries(agent_rpc_mcp PRIVATE
 target_include_directories(agent_rpc_mcp PRIVATE ${JSONCPP_INCLUDE_DIRS})
 
 # 设置C++标准
-target_compile_features(agent_rpc_mcp PRIVATE cxx_std_20)
+target_compile_features(agent_rpc_mcp PUBLIC cxx_std_20)
 
 # 设置编译选项
 if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -60,5 +62,3 @@ install(DIRECTORY include/agent_rpc/mcp/
     DESTINATION include/agent_rpc/mcp
     FILES_MATCHING PATTERN "*.h"
 )
-
-

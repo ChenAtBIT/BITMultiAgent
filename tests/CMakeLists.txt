@@ -1,324 +1,70 @@
-# Google Test targets are prepared in the root CMakeLists.txt.
+find_package(rapidcheck REQUIRED)
 
-if(NOT TARGET rapidcheck)
-    find_package(rapidcheck REQUIRED)
+# 优先使用系统 GTest，避免 Anaconda 中旧版 GTest 与系统头文件 ABI 不一致。
+if(EXISTS "/usr/lib/x86_64-linux-gnu/libgtest.a" AND
+   EXISTS "/usr/lib/x86_64-linux-gnu/libgtest_main.a")
+    add_library(dag_gtest STATIC IMPORTED)
+    set_target_properties(dag_gtest PROPERTIES
+        IMPORTED_LOCATION "/usr/lib/x86_64-linux-gnu/libgtest.a"
+        INTERFACE_INCLUDE_DIRECTORIES "/usr/include"
+    )
+    add_library(dag_gtest_main STATIC IMPORTED)
+    set_target_properties(dag_gtest_main PROPERTIES
+        IMPORTED_LOCATION "/usr/lib/x86_64-linux-gnu/libgtest_main.a"
+        INTERFACE_INCLUDE_DIRECTORIES "/usr/include"
+        INTERFACE_LINK_LIBRARIES dag_gtest
+    )
+    set(DAG_GTEST_LIBRARIES dag_gtest dag_gtest_main)
+else()
+    find_package(GTest REQUIRED)
+    set(DAG_GTEST_LIBRARIES GTest::gtest GTest::gtest_main)
 endif()
 
+# 测试桥接头将 RapidCheck 属性测试注册到 GoogleTest。
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
-if(EXISTS "/usr/local/include")
-    include_directories(/usr/local/include)
-endif()
 
-add_executable(test_rpc_framework test_rpc_framework.cpp)
-target_link_libraries(test_rpc_framework
-    agent_rpc_common
-    GTest::gtest
-    GTest::gtest_main
-    pthread
-)
-target_include_directories(test_rpc_framework PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../common/include
-)
-
-# 序列化测试
-add_executable(test_serialization test_serialization.cpp)
-
-# 链接库
-target_link_libraries(test_serialization 
-    agent_rpc_common
-    proto_lib
-    ${GRPC_LIBRARIES}
-    ${PROTOBUF_LIBRARIES}
-    GTest::gtest
-    GTest::gtest_main
-    pthread
-    uuid
-)
-
-# 包含目录
-target_include_directories(test_serialization PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_BINARY_DIR}/../proto
-)
-
-# A2A集成测试
-add_executable(test_a2a_integration test_a2a_integration.cpp)
-
-target_link_libraries(test_a2a_integration 
-    a2a
-    GTest::gtest
-    GTest::gtest_main
-    pthread
-    CURL::libcurl
-)
-
-target_include_directories(test_a2a_integration PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../a2a/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../a2a/third_party
-)
-
-# 添加测试
-enable_testing()
-add_test(NAME RpcFrameworkTest COMMAND test_rpc_framework)
-add_test(NAME SerializationTest COMMAND test_serialization)
-add_test(NAME A2AIntegrationTest COMMAND test_a2a_integration)
-
-# Proto序列化往返属性测试
-# **Feature: a2a-integration, Property 11: Protobuf Serialization Round-Trip**
-# **Validates: Requirements 11.5**
-
-add_executable(test_proto_roundtrip test_proto_roundtrip.cpp)
-
-target_link_libraries(test_proto_roundtrip 
-    proto_lib
-    ${GRPC_LIBRARIES}
-    ${PROTOBUF_LIBRARIES}
-    rapidcheck
-    GTest::gtest
-    GTest::gtest_main
-    pthread
-)
-
-target_include_directories(test_proto_roundtrip PRIVATE
-    ${CMAKE_CURRENT_BINARY_DIR}/../proto
-)
-
-add_test(NAME ProtoRoundTripTest COMMAND test_proto_roundtrip)
-
-# A2A适配器属性测试
-# **Feature: a2a-integration, Property 1, 7, 10**
-# **Validates: Requirements 5.1, 5.5, 8.1-8.4, 9.5, 10.1**
-add_executable(test_adapter_properties test_adapter_properties.cpp)
-
-target_link_libraries(test_adapter_properties 
-    a2a_adapter
-    a2a
-    proto_lib
-    ${GRPC_LIBRARIES}
-    ${PROTOBUF_LIBRARIES}
-    rapidcheck
-    GTest::gtest
-    GTest::gtest_main
-    pthread
-    CURL::libcurl
-)
-
-target_include_directories(test_adapter_properties PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../a2a_adapter/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../a2a/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../a2a/third_party
-    ${CMAKE_CURRENT_BINARY_DIR}/../proto
-)
-
-add_test(NAME AdapterPropertiesTest COMMAND test_adapter_properties)
-
-# Task Manager属性测试
-# **Feature: a2a-integration, Property 2, 3, 6**
-# **Validates: Requirements 3.2, 3.5, 4.2, 5.5, 6.1-6.6**
-add_executable(test_task_manager_properties test_task_manager_properties.cpp)
-
-target_link_libraries(test_task_manager_properties 
-    a2a_adapter
-    a2a
-    proto_lib
-    ${GRPC_LIBRARIES}
-    ${PROTOBUF_LIBRARIES}
-    rapidcheck
-    GTest::gtest
-    GTest::gtest_main
-    pthread
-    CURL::libcurl
-)
-
-target_include_directories(test_task_manager_properties PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../a2a_adapter/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../a2a/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../a2a/third_party
-    ${CMAKE_CURRENT_BINARY_DIR}/../proto
-)
-
-add_test(NAME TaskManagerPropertiesTest COMMAND test_task_manager_properties)
-
-# Agent Router属性测试
-# **Feature: a2a-integration, Property 4, 8**
-# **Validates: Requirements 2.3, 3.4, 4.5, 10.3**
-add_executable(test_agent_router_properties test_agent_router_properties.cpp)
-
-target_link_libraries(test_agent_router_properties 
-    orchestrator
-    a2a_adapter
-    a2a
-    proto_lib
-    ${GRPC_LIBRARIES}
-    ${PROTOBUF_LIBRARIES}
-    rapidcheck
-    GTest::gtest
-    GTest::gtest_main
-    pthread
-    CURL::libcurl
-)
-
-target_include_directories(test_agent_router_properties PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../orchestrator/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../a2a_adapter/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../a2a/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../a2a/third_party
-    ${CMAKE_CURRENT_BINARY_DIR}/../proto
-)
-
-add_test(NAME AgentRouterPropertiesTest COMMAND test_agent_router_properties)
-
-# 分层上下文记忆管理测试
-add_executable(test_context_memory_manager test_context_memory_manager.cpp)
-
-target_link_libraries(test_context_memory_manager
-    orchestrator
-    GTest::gtest
-    GTest::gtest_main
-    pthread
-)
-
-target_include_directories(test_context_memory_manager PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../orchestrator/include
-)
-
-target_compile_definitions(test_context_memory_manager PRIVATE
-    AGENT_RPC_PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
-)
-
-add_test(NAME ContextMemoryManagerTest COMMAND test_context_memory_manager)
-
-# 安装测试
-install(TARGETS test_serialization
-    RUNTIME DESTINATION bin
-)
-
-
-# AI Query集成测试
-# **Feature: a2a-integration, Task 17: 集成测试**
-# **Validates: Requirements 2.1, 2.2, 2.3, 2.4, 2.5, 9.5, 10.2, 10.5**
-add_executable(test_ai_query_integration test_ai_query_integration.cpp)
-
-target_link_libraries(test_ai_query_integration 
-    agent_rpc_server
-    agent_rpc_client
-    a2a_adapter
-    a2a
-    proto_lib
-    ${GRPC_LIBRARIES}
-    ${PROTOBUF_LIBRARIES}
-    rapidcheck
-    GTest::gtest
-    GTest::gtest_main
-    pthread
-    uuid
-    CURL::libcurl
-)
-
-target_include_directories(test_ai_query_integration PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../RPC_server/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../RPC_client/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../a2a_adapter/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../a2a/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../a2a/third_party
-    ${CMAKE_CURRENT_SOURCE_DIR}/../common/include
-    ${CMAKE_CURRENT_BINARY_DIR}/../proto
-)
-
-add_test(NAME AIQueryIntegrationTest COMMAND test_ai_query_integration)
-
-# MCP Agent集成测试
-# **Feature: a2a-integration, Task 20: MCP 集成测试**
-# **Validates: Requirements 12.1, 12.3, 12.5**
-add_executable(test_mcp_integration test_mcp_integration.cpp)
-
-target_link_libraries(test_mcp_integration 
-    agent_rpc_mcp
-    agent_rpc_common
-    rapidcheck
-    GTest::gtest
-    GTest::gtest_main
-    pthread
-)
-
-target_include_directories(test_mcp_integration PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../mcp_client/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../common/include
-)
-
-add_test(NAME MCPIntegrationTest COMMAND test_mcp_integration)
-
-# RAG-MCP 属性测试
-# **Feature: rag-mcp, Property 1-8**
-# **Validates: Requirements 1.3, 3.2, 3.3, 3.4, 4.1, 4.3, 7.2, 7.3**
-add_executable(test_rag_mcp_properties test_rag_mcp_properties.cpp)
-
-target_link_libraries(test_rag_mcp_properties 
-    agent_rpc_mcp
-    agent_rpc_common
-    rapidcheck
-    GTest::gtest
-    GTest::gtest_main
-    pthread
-    CURL::libcurl
-)
-
-target_include_directories(test_rag_mcp_properties PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../mcp_client/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../common/include
-)
-
-add_test(NAME RAGMCPPropertiesTest COMMAND test_rag_mcp_properties)
-
-add_executable(test_service_registry test_service_registry.cpp)
-target_link_libraries(test_service_registry
-    agent_rpc_registry
-    agent_rpc_common
-    GTest::gtest
-    GTest::gtest_main
-    pthread
-)
-target_include_directories(test_service_registry PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../registry/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../common/include
-)
-add_test(NAME ServiceRegistryTest COMMAND test_service_registry)
-
-add_executable(test_agent_communication test_agent_communication.cpp)
-target_link_libraries(test_agent_communication
-    agent_rpc_server
-    agent_rpc_client
-    agent_rpc_registry
-    agent_rpc_common
-    GTest::gtest
-    GTest::gtest_main
-    pthread
-    uuid
-    CURL::libcurl
-)
-target_include_directories(test_agent_communication PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../RPC_server/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../RPC_client/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../registry/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../common/include
-    ${CMAKE_CURRENT_BINARY_DIR}/../proto
-)
-add_test(NAME AgentCommunicationIntegrationTest COMMAND test_agent_communication)
-
-# Native C++ DAG Web runtime tests. These inject a deterministic model and do
-# not access the network or require QWEN_API_KEY.
 add_executable(test_dag_orchestrator
     test_dag_orchestrator.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../examples/ai_orchestrator/dag_runtime.cpp
+    ${CMAKE_SOURCE_DIR}/examples/ai_orchestrator/dag_runtime.cpp
 )
 target_include_directories(test_dag_orchestrator PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../examples/ai_orchestrator/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../a2a/third_party
+    ${CMAKE_SOURCE_DIR}/examples/ai_orchestrator/include
 )
-target_link_libraries(test_dag_orchestrator
-    GTest::gtest
-    GTest::gtest_main
+target_link_libraries(test_dag_orchestrator PRIVATE
+    ${DAG_GTEST_LIBRARIES}
     CURL::libcurl
     Threads::Threads
 )
 add_test(NAME DagOrchestratorTest COMMAND test_dag_orchestrator)
+
+add_executable(test_context_memory_manager test_context_memory_manager.cpp)
+target_link_libraries(test_context_memory_manager PRIVATE
+    context_memory
+    ${DAG_GTEST_LIBRARIES}
+    Threads::Threads
+)
+target_compile_definitions(test_context_memory_manager PRIVATE
+    DAG_MULTI_AGENT_PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
+add_test(NAME ContextMemoryManagerTest COMMAND test_context_memory_manager)
+
+add_executable(test_mcp_integration test_mcp_integration.cpp)
+target_link_libraries(test_mcp_integration PRIVATE
+    agent_rpc_mcp
+    agent_common
+    rapidcheck
+    ${DAG_GTEST_LIBRARIES}
+    Threads::Threads
+)
+add_test(NAME MCPIntegrationTest COMMAND test_mcp_integration)
+
+add_executable(test_rag_mcp_properties test_rag_mcp_properties.cpp)
+target_link_libraries(test_rag_mcp_properties PRIVATE
+    agent_rpc_mcp
+    agent_common
+    rapidcheck
+    ${DAG_GTEST_LIBRARIES}
+    CURL::libcurl
+    Threads::Threads
+)
+add_test(NAME RAGMCPPropertiesTest COMMAND test_rag_mcp_properties)

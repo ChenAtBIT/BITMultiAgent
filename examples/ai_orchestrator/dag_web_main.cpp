@@ -28,9 +28,14 @@ std::string endpoint_from_environment() {
     if (endpoint.empty()) endpoint = environment("QWEN_BASE_URL");
     if (endpoint.empty()) {
         endpoint = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
-    } else if (endpoint.size() < 15 || endpoint.rfind("/chat/completions") != endpoint.size() - 16) {
+    } else {
         while (!endpoint.empty() && endpoint.back() == '/') endpoint.pop_back();
-        endpoint += "/chat/completions";
+        const std::string suffix = "/chat/completions";
+        // 完整 Chat Completions 地址不应被重复追加路径。
+        if (endpoint.size() < suffix.size() ||
+            endpoint.compare(endpoint.size() - suffix.size(), suffix.size(), suffix) != 0) {
+            endpoint += suffix;
+        }
     }
     return endpoint;
 }

@@ -6,7 +6,7 @@
  * - Task 20.1: MCPAgentIntegration initialization and shutdown
  * - Task 20.2: MCP error handling (server unavailable, timeouts)
  * 
- * **Feature: a2a-integration, Task 20: MCP 集成测试**
+ * @brief MCP Client 与 Agent 集成测试
  * **Validates: Requirements 12.1, 12.3, 12.5**
  */
 
@@ -22,7 +22,7 @@ using namespace agent_rpc::mcp;
 
 // ============================================================================
 // Task 20.1: MCPAgentIntegration Unit Tests
-// **Feature: a2a-integration, Task 20.1: MCP Agent 集成单元测试**
+// MCP Agent 集成单元测试
 // **Validates: Requirements 12.1, 12.3**
 // ============================================================================
 
@@ -191,7 +191,7 @@ TEST_F(MCPAgentIntegrationTest, GetToolInputSchemaWhenMCPDisabled) {
 
 // ============================================================================
 // Task 20.2: MCP Error Handling Tests
-// **Feature: a2a-integration, Task 20.2: MCP 错误处理测试**
+// MCP 错误处理测试
 // **Validates: Requirements 12.5**
 // ============================================================================
 

@@ -138,7 +138,19 @@ Thought -> Action -> Observation -> Answer
 8. Agent 输出和 Retry
 
 ## 🗂️ 五、项目结构
-.....
+```text
+.
+├── common/                         # MCP 使用的通用日志组件
+├── examples/
+│   ├── ai_orchestrator/            # DAG Runtime、HTTP 服务与 Web 工作台
+│   └── rag_mcp_example.cpp         # RAG-MCP 独立示例
+├── mcp_client/                     # MCP Client 与 RAG 工具选择
+├── mcp_server/                     # MCP Server、传输层和动态插件
+├── orchestrator/                   # 独立分层记忆管理器
+├── tests/                          # DAG、MCP、RAG-MCP、记忆管理测试
+├── third_party/sqlite-vec/         # 知识库 MCP 插件依赖
+└── docs/                           # MCP 文档、提示词和演示资料
+```
 
 ## ⚙️ 六、快速开始
 

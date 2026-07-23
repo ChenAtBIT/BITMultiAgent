@@ -74,7 +74,7 @@ char* makeResponse(const json& payload) {
 }
 
 // MCP 工具结果通常会包在 "content" 数组里。
-// 这里也沿用同样的结构，这样教程里的直连客户端和 gRPC 客户端
+// 这里也沿用同样的结构，便于不同 MCP Client 复用统一返回格式
 // 都可以用同一套格式化逻辑直接显示结果。
 json makeTextResult(const std::string& text) {
     json response;

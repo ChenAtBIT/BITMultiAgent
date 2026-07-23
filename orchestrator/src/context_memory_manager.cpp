@@ -515,7 +515,7 @@ std::string ContextMemoryManager::summarize_messages_unlocked(
         "1. 用户作为科研人的研究方向、课题背景、当前项目目标。\n"
         "2. 用户对技术栈、实现方式、代码风格、编译验证和回答粒度的偏好。\n"
         "3. 已确认的设计决策、约束条件、待办事项和风险。\n"
-        "4. 与 C++/gRPC、A2A、MCP、RAG、Multi Agent、科研资料检索、"
+        "4. 与 C++、动态 DAG、MCP、RAG、Multi Agent、科研资料检索、"
         "会议纪要和服务器运维协同有关的上下文。\n"
         "输出要求：最多 8 条要点，语言紧凑，不要解释压缩过程。";
 

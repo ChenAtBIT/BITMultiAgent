@@ -63,35 +63,6 @@ struct SkillActivation {
     json public_json() const;
 };
 
-struct ToolDefinition {
-    std::string name;
-    std::string description;
-    std::string parameters_json;
-};
-
-struct ToolResult {
-    bool success = false;
-    std::string content;
-    std::string error;
-};
-
-using ToolExecutor = std::function<ToolResult(const std::string&, const std::string&)>;
-
-class ToolRegistry {
-public:
-    void add(ToolDefinition definition, ToolExecutor executor);
-    std::vector<ToolDefinition> definitions() const;
-    ToolResult execute(const std::string& name, const std::string& arguments_json) const;
-    bool empty() const;
-
-private:
-    struct Entry {
-        ToolDefinition definition;
-        ToolExecutor executor;
-    };
-    std::map<std::string, Entry> entries_;
-};
-
 struct ChatMessage {
     std::string role;
     std::string content;
@@ -219,7 +190,6 @@ private:
     std::shared_ptr<ChatModel> model_;
     std::vector<AgentDefinition> default_agents_;
     std::vector<SkillSpec> skills_;
-    ToolRegistry tools_;
     std::filesystem::path log_directory_;
     mutable std::mutex log_mutex_;
     mutable std::mutex runs_mutex_;

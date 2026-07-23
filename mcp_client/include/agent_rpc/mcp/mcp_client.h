@@ -10,7 +10,6 @@
 #include <condition_variable>
 #include <queue>
 #include <atomic>
-#include "agent_rpc/common/types.h"
 #include "agent_rpc/common/logger.h"
 
 namespace agent_rpc {
@@ -261,5 +260,4 @@ private:
 
 } // namespace mcp
 } // namespace agent_rpc
-
 

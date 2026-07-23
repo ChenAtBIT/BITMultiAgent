@@ -229,10 +229,3 @@ TEST(DagRuntimeTest, LongChineseMemoryIsNotCutInsideUtf8Character) {
     EXPECT_EQ(snapshot["statuses"]["writer"], "done");
     EXPECT_TRUE(second_round_prompt_is_valid.load());
 }
-
-TEST(ToolRegistryTest, EmptyRegistryDoesNotExecuteTools) {
-    ToolRegistry registry;
-    EXPECT_TRUE(registry.empty());
-    EXPECT_TRUE(registry.definitions().empty());
-    EXPECT_FALSE(registry.execute("web_search", "{}").success);
-}
