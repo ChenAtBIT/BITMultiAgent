@@ -1,624 +1,281 @@
-# MCP 插件开发指南
+# MCP Plugin V2 开发指南
 
-## 概述
+本项目的 Plugin 是加载到 MCP Server 进程中的 C++ 动态库。Plugin 只实现具体工具能力；工具发现、mode/actor 过滤、权限判断、参数校验、Session 工作区推导、输出限制和审计由 Registry/Gateway 统一处理。
 
-MCP (Model Context Protocol) 插件是扩展 AI Agent 能力的主要方式。本指南介绍如何开发自定义 MCP 插件。
+## 调用链
 
-## 插件架构
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         MCP Server                              │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │                    Plugin Manager                        │   │
-│  │  ┌───────────┐  ┌───────────┐  ┌───────────┐           │   │
-│  │  │ Plugin 1  │  │ Plugin 2  │  │ Plugin N  │           │   │
-│  │  │ (*.so)    │  │ (*.so)    │  │ (*.so)    │           │   │
-│  │  └───────────┘  └───────────┘  └───────────┘           │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│                              │                                  │
-│                              ▼                                  │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │                    Plugin API                            │   │
-│  │  - GetName()                                             │   │
-│  │  - GetVersion()                                          │   │
-│  │  - Initialize()                                          │   │
-│  │  - HandleRequest()                                       │   │
-│  │  - GetToolCount() / GetTool()                           │   │
-│  │  - GetResourceCount() / GetResource()                   │   │
-│  │  - Shutdown()                                            │   │
-│  └─────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
+```text
+tool_orchestration.json
+  -> ToolRegistry 加载并校验 Manifest
+  -> tools/list 返回当前可信 actor 的完整 ToolView
+  -> 模型生成 model-safe name + arguments
+  -> ToolGateway 二次校验归属和 Schema
+  -> Plugin HandleToolCall(stable_id, arguments, trusted_context)
+  -> 输出 Schema/大小校验和脱敏审计
 ```
 
-## 快速开始
+首版 `PermissionEvaluator` 固定返回 `allow`，但 mode/actor 过滤不会被跳过。配置中写入 `ask` 或 `deny` 会导致启动失败。
 
-### 1. 创建插件目录
+## V2 ABI
 
-```bash
-cd mcp_server_integrated/plugins
-mkdir my_plugin
-cd my_plugin
-```
-
-### 2. 创建插件头文件
+ABI 定义位于 `mcp_server/src/interface/PluginAPI.h`：
 
 ```cpp
-// MyPlugin.h
-#pragma once
+#define MCP_PLUGIN_API_VERSION 2
 
-#include "PluginAPI.h"
+typedef struct {
+    const char* id;            // 稳定 ID：plugin_id.tool_name
+    const char* name;          // 模型名：plugin_id__tool_name
+    const char* description;
+    const char* inputSchema;
+    const char* outputSchema;
+} PluginTool;
 
-class MyPlugin {
-public:
-    static const char* GetName();
-    static const char* GetVersion();
-    static PluginType GetType();
-    static int Initialize();
-    static char* HandleRequest(const char* request);
-    static void Shutdown();
-    
-    // 工具相关
-    static int GetToolCount();
-    static const PluginTool* GetTool(int index);
-    
-    // 资源相关 (可选)
-    static int GetResourceCount();
-    static const PluginResource* GetResource(int index);
-};
-```
-
-### 3. 实现插件
-
-```cpp
-// MyPlugin.cpp
-#include "MyPlugin.h"
-#include <json/json.h>
-#include <cstring>
-#include <vector>
-
-// 定义工具
-static std::vector<PluginTool> g_tools;
-
-const char* MyPlugin::GetName() {
-    return "my-plugin";
-}
-
-const char* MyPlugin::GetVersion() {
-    return "1.0.0";
-}
-
-PluginType MyPlugin::GetType() {
-    return PluginType::TOOL;  // 或 RESOURCE, BOTH
-}
-
-int MyPlugin::Initialize() {
-    // 注册工具
-    PluginTool tool;
-    tool.name = "my_tool";
-    tool.description = "我的自定义工具";
-    tool.inputSchema = R"({
-        "type": "object",
-        "properties": {
-            "param1": {
-                "type": "string",
-                "description": "参数1"
-            }
-        },
-        "required": ["param1"]
-    })";
-    g_tools.push_back(tool);
-    
-    return 0;  // 成功
-}
-
-char* MyPlugin::HandleRequest(const char* request) {
-    Json::Value root;
-    Json::Reader reader;
-    
-    if (!reader.parse(request, root)) {
-        return strdup(R"({"error": "Invalid JSON"})");
-    }
-    
-    std::string method = root["method"].asString();
-    
-    if (method == "tools/call") {
-        std::string tool_name = root["params"]["name"].asString();
-        Json::Value arguments = root["params"]["arguments"];
-        
-        if (tool_name == "my_tool") {
-            std::string param1 = arguments["param1"].asString();
-            
-            // 处理逻辑
-            Json::Value result;
-            result["content"][0]["type"] = "text";
-            result["content"][0]["text"] = "处理结果: " + param1;
-            
-            Json::FastWriter writer;
-            return strdup(writer.write(result).c_str());
-        }
-    }
-    
-    return strdup(R"({"error": "Unknown method"})");
-}
-
-void MyPlugin::Shutdown() {
-    g_tools.clear();
-}
-
-int MyPlugin::GetToolCount() {
-    return static_cast<int>(g_tools.size());
-}
-
-const PluginTool* MyPlugin::GetTool(int index) {
-    if (index >= 0 && index < static_cast<int>(g_tools.size())) {
-        return &g_tools[index];
-    }
-    return nullptr;
-}
-
-int MyPlugin::GetResourceCount() {
-    return 0;
-}
-
-const PluginResource* MyPlugin::GetResource(int index) {
-    return nullptr;
-}
-
-// 导出函数
-extern "C" {
-    PLUGIN_API PluginAPI* CreatePlugin() {
-        static PluginAPI api;
-        api.GetName = MyPlugin::GetName;
-        api.GetVersion = MyPlugin::GetVersion;
-        api.GetType = MyPlugin::GetType;
-        api.Initialize = MyPlugin::Initialize;
-        api.HandleRequest = MyPlugin::HandleRequest;
-        api.Shutdown = MyPlugin::Shutdown;
-        api.GetToolCount = MyPlugin::GetToolCount;
-        api.GetTool = MyPlugin::GetTool;
-        api.GetResourceCount = MyPlugin::GetResourceCount;
-        api.GetResource = MyPlugin::GetResource;
-        return &api;
-    }
-    
-    PLUGIN_API void DestroyPlugin(PluginAPI* api) {
-        // 清理资源
-    }
-}
-```
-
-### 4. 创建 CMakeLists.txt
-
-```cmake
-# CMakeLists.txt
-cmake_minimum_required(VERSION 3.10)
-project(my_plugin)
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(JSONCPP REQUIRED jsoncpp)
-
-add_library(my_plugin SHARED
-    MyPlugin.cpp
-)
-
-target_include_directories(my_plugin PRIVATE
-    ${JSONCPP_INCLUDE_DIRS}
-    ${CMAKE_SOURCE_DIR}/include
-)
-
-target_link_libraries(my_plugin PRIVATE
-    ${JSONCPP_LIBRARIES}
-)
-
-set_target_properties(my_plugin PROPERTIES
-    PREFIX ""
-    OUTPUT_NAME "my_plugin"
-)
-```
-
-### 5. 编译插件
-
-```bash
-mkdir build && cd build
-cmake ..
-make
-```
-
-### 6. 部署插件
-
-```bash
-# 复制到 plugins 目录
-cp libmy_plugin.so ../../build/plugins/
-```
-
-## 插件 API 详解
-
-### PluginAPI 结构
-
-```cpp
-struct PluginAPI {
-    // 基本信息
+typedef struct {
+    int (*GetApiVersion)();
+    const char* (*GetId)();
     const char* (*GetName)();
     const char* (*GetVersion)();
-    PluginType (*GetType)();
-    
-    // 生命周期
     int (*Initialize)();
     void (*Shutdown)();
-    
-    // 请求处理
-    char* (*HandleRequest)(const char* request);
-    
-    // 工具相关
     int (*GetToolCount)();
     const PluginTool* (*GetTool)(int index);
-    
-    // 资源相关
-    int (*GetResourceCount)();
-    const PluginResource* (*GetResource)(int index);
-};
+    char* (*HandleToolCall)(const char* toolId,
+                            const char* arguments,
+                            const char* context);
+    void (*FreeResult)(char* result);
+} PluginAPI;
 ```
 
-### PluginTool 结构
+动态库必须导出：
 
 ```cpp
-struct PluginTool {
-    const char* name;           // 工具名称
-    const char* description;    // 工具描述
-    const char* inputSchema;    // JSON Schema 格式的输入参数定义
-};
+extern "C" PLUGIN_API PluginAPI* CreatePlugin();
+extern "C" PLUGIN_API void DestroyPlugin(PluginAPI* api);
 ```
 
-### PluginResource 结构
+Registry 会在启动时验证所有函数指针、API 版本、Plugin ID、语义化版本、工具描述、工具命名和输入/输出 Schema。任一核心 Plugin 不合法，MCP Server 直接退出。
+
+## 命名规则
+
+假设 Plugin ID 为 `example_tools`，工具局部名为 `echo`：
+
+- 稳定内部 ID：`example_tools.echo`
+- 注入模型的函数名：`example_tools__echo`
+- 动态库文件：Linux 为 `example_tools.so`
+- 配置映射使用 Plugin ID：`example_tools`
+
+Plugin ID、Tool ID 和模型函数名必须全局唯一。不要在模型参数里加入 `session_id`、`actor_kind`、`workspace_root` 等可信字段。
+
+## 最小实现
 
 ```cpp
-struct PluginResource {
-    const char* uri;            // 资源 URI
-    const char* name;           // 资源名称
-    const char* description;    // 资源描述
-    const char* mimeType;       // MIME 类型
-};
-```
+#include "PluginAPI.h"
+#include "PluginSupport.h"
 
-### PluginType 枚举
+#include <string>
 
-```cpp
-enum class PluginType {
-    TOOL,       // 只提供工具
-    RESOURCE,   // 只提供资源
-    BOTH        // 同时提供工具和资源
-};
-```
+using vx::plugin::json;
 
-## 请求/响应格式
+namespace {
 
-### 工具调用请求
+constexpr const char* output_schema = R"({
+  "type": "object",
+  "properties": {"ok": {"type": "boolean"}},
+  "required": ["ok"]
+})";
 
-```json
-{
-    "jsonrpc": "2.0",
-    "method": "tools/call",
-    "params": {
-        "name": "my_tool",
-        "arguments": {
-            "param1": "value1"
-        }
-    },
-    "id": "request-id"
-}
-```
-
-### 工具调用响应
-
-```json
-{
-    "content": [
-        {
-            "type": "text",
-            "text": "处理结果"
-        }
-    ]
-}
-```
-
-### 资源读取请求
-
-```json
-{
-    "jsonrpc": "2.0",
-    "method": "resources/read",
-    "params": {
-        "uri": "my-plugin:///resource"
-    },
-    "id": "request-id"
-}
-```
-
-### 资源读取响应
-
-```json
-{
-    "contents": [
-        {
-            "uri": "my-plugin:///resource",
-            "mimeType": "text/plain",
-            "text": "资源内容"
-        }
-    ]
-}
-```
-
-## 示例插件
-
-### Calculator 插件
-
-提供数学计算功能。
-
-```cpp
-// 工具定义
-PluginTool calculator_tool = {
-    "calculator",
-    "计算数学表达式",
-    R"({
-        "type": "object",
-        "properties": {
-            "expression": {
-                "type": "string",
-                "description": "数学表达式，如 2+3*4"
-            }
-        },
-        "required": ["expression"]
-    })"
-};
-
-// 处理逻辑
-if (tool_name == "calculator") {
-    std::string expr = arguments["expression"].asString();
-    double result = evaluateExpression(expr);
-    
-    Json::Value response;
-    response["content"][0]["type"] = "text";
-    response["content"][0]["text"] = expr + " = " + std::to_string(result);
-    return response;
-}
-```
-
-### Weather 插件
-
-提供天气查询功能。
-
-```cpp
-// 工具定义
-PluginTool weather_tool = {
-    "get_weather",
-    "查询城市天气",
-    R"({
-        "type": "object",
-        "properties": {
-            "city": {
-                "type": "string",
-                "description": "城市名称"
-            }
-        },
-        "required": ["city"]
-    })"
-};
-
-// 处理逻辑
-if (tool_name == "get_weather") {
-    std::string city = arguments["city"].asString();
-    std::string weather = fetchWeather(city);  // 调用天气 API
-    
-    Json::Value response;
-    response["content"][0]["type"] = "text";
-    response["content"][0]["text"] = city + " 天气: " + weather;
-    return response;
-}
-```
-
-### Bacio-Quote 插件 (资源类型)
-
-提供意大利名言资源。
-
-```cpp
-// 资源定义
-PluginResource quote_resource = {
-    "bacio:///quote",
-    "Bacio Quote",
-    "意大利 Bacio Perugina 名言",
-    "text/plain"
-};
-
-// 处理逻辑
-if (method == "resources/read") {
-    std::string uri = params["uri"].asString();
-    
-    if (uri == "bacio:///quote") {
-        std::string quote = getRandomQuote();
-        
-        Json::Value response;
-        response["contents"][0]["uri"] = uri;
-        response["contents"][0]["mimeType"] = "text/plain";
-        response["contents"][0]["text"] = quote;
-        return response;
+PluginTool tools[] = {
+    {
+        "example_tools.echo",
+        "example_tools__echo",
+        "Return one short text value.",
+        R"({
+          "type": "object",
+          "properties": {
+            "text": {"type": "string", "minLength": 1, "maxLength": 1000}
+          },
+          "required": ["text"],
+          "additionalProperties": false
+        })",
+        output_schema
     }
-}
-```
+};
 
-## 错误处理
-
-### 返回错误
-
-```cpp
-char* HandleRequest(const char* request) {
-    // 参数验证失败
-    if (!validateParams(params)) {
-        Json::Value error;
-        error["error"]["code"] = -32602;
-        error["error"]["message"] = "Invalid params";
-        return strdup(Json::FastWriter().write(error).c_str());
-    }
-    
-    // 内部错误
+char* handle(const char* tool_id, const char* raw_arguments, const char* raw_context) {
     try {
-        // 处理逻辑
-    } catch (const std::exception& e) {
-        Json::Value error;
-        error["error"]["code"] = -32603;
-        error["error"]["message"] = e.what();
-        return strdup(Json::FastWriter().write(error).c_str());
-    }
-}
-```
+        const json arguments = json::parse(raw_arguments ? raw_arguments : "{}");
+        const json context = json::parse(raw_context ? raw_context : "{}");
+        const std::string id = tool_id ? tool_id : "";
 
-### 错误码
-
-| 错误码 | 描述 |
-|--------|------|
-| -32700 | Parse error |
-| -32600 | Invalid Request |
-| -32601 | Method not found |
-| -32602 | Invalid params |
-| -32603 | Internal error |
-
-## 最佳实践
-
-### 1. 内存管理
-
-```cpp
-// 使用 strdup 分配返回字符串
-char* HandleRequest(const char* request) {
-    std::string result = processRequest(request);
-    return strdup(result.c_str());  // 调用方负责释放
-}
-```
-
-### 2. 线程安全
-
-```cpp
-#include <mutex>
-
-static std::mutex g_mutex;
-
-char* HandleRequest(const char* request) {
-    std::lock_guard<std::mutex> lock(g_mutex);
-    // 处理逻辑
-}
-```
-
-### 3. 资源清理
-
-```cpp
-void Shutdown() {
-    // 关闭连接
-    closeConnections();
-    
-    // 释放内存
-    g_tools.clear();
-    g_resources.clear();
-    
-    // 清理缓存
-    clearCache();
-}
-```
-
-### 4. 日志记录
-
-```cpp
-#include <iostream>
-#include <ctime>
-
-void log(const std::string& level, const std::string& message) {
-    time_t now = time(nullptr);
-    char timestamp[64];
-    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
-    std::cerr << "[" << timestamp << "] [" << level << "] " << message << std::endl;
-}
-
-int Initialize() {
-    log("INFO", "Plugin initializing...");
-    // ...
-    log("INFO", "Plugin initialized successfully");
-    return 0;
-}
-```
-
-### 5. 输入验证
-
-```cpp
-bool validateExpression(const std::string& expr) {
-    // 检查长度
-    if (expr.empty() || expr.length() > 1000) {
-        return false;
-    }
-    
-    // 检查字符
-    for (char c : expr) {
-        if (!isdigit(c) && !strchr("+-*/().^ ", c)) {
-            return false;
+        if (id == "example_tools.echo") {
+            return vx::plugin::copy_result(vx::plugin::success({
+                {"text", arguments.at("text")},
+                {"operation_id", context.at("operation_id")}
+            }));
         }
+        return vx::plugin::copy_result(
+            vx::plugin::failure("UNKNOWN_TOOL", "unknown example_tools tool"));
+    } catch (const std::exception& error) {
+        return vx::plugin::copy_result(
+            vx::plugin::failure("PLUGIN_ERROR", error.what()));
     }
-    
-    return true;
+}
+
+int api_version() { return MCP_PLUGIN_API_VERSION; }
+const char* plugin_id() { return "example_tools"; }
+const char* plugin_name() { return "Example Tools"; }
+const char* plugin_version() { return "1.0.0"; }
+int initialize() { return 1; }
+void shutdown() {}
+int tool_count() { return static_cast<int>(sizeof(tools) / sizeof(tools[0])); }
+const PluginTool* get_tool(int index) {
+    return index >= 0 && index < tool_count() ? &tools[index] : nullptr;
+}
+
+}  // namespace
+
+extern "C" PLUGIN_API PluginAPI* CreatePlugin() {
+    return new PluginAPI{api_version, plugin_id, plugin_name, plugin_version,
+                         initialize, shutdown, tool_count, get_tool,
+                         handle, vx::plugin::free_result};
+}
+
+extern "C" PLUGIN_API void DestroyPlugin(PluginAPI* api) { delete api; }
+```
+
+`HandleToolCall` 返回的内存属于 Plugin。必须提供匹配的 `FreeResult`，宿主不会使用 `free()` 或 `delete[]` 猜测分配方式。
+
+## 返回约定
+
+成功：
+
+```json
+{
+  "ok": true,
+  "result": {"value": "..."}
 }
 ```
 
-## 调试技巧
+失败：
 
-### 1. 使用测试客户端
-
-```bash
-cd mcp_server_integrated/test
-python3 test-client-stdio.py configuration-stdio-linux.json
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "DOMAIN_ERROR",
+    "message": "human-readable message"
+  }
+}
 ```
 
-### 2. 查看日志
+可以直接使用 `PluginSupport.h` 中的 `success`、`failure`、`copy_result` 和 `free_result`。Plugin 应捕获异常并返回确定的结构化错误，不得返回未初始化数据。
 
-```bash
-tail -f /tmp/mcp_logs/mcp-server_*.log
+Gateway 将限制原始结果为 2 MiB并按 `outputSchema` 再校验。大正文工具应设置更低的领域上限，例如 `web_research` 的网页响应上限为 2 MiB、文本输出上限为 100000 个 UTF-8 字符。
+
+## 可信执行上下文
+
+Plugin 收到的 `context` 由宿主构造：
+
+```json
+{
+  "session_id": "32位十六进制ID",
+  "operation_id": "当前设计、计划或节点操作ID",
+  "mode_id": "dag_team",
+  "actor_kind": "designer | planner | executor",
+  "actor_id": "可信Actor ID",
+  "workspace_root": "/server/derived/session/workspace",
+  "trusted_data": {}
+}
 ```
 
-### 3. 单独测试插件
+模型只能提供 Tool name 和 `arguments`，不能提供或覆盖这些字段。`workspace_root` 始终由 MCP Server 使用 `session_id` 推导。
+
+需要草稿隔离的 Plugin 可以使用：
 
 ```cpp
-// test_my_plugin.cpp
-#include "MyPlugin.h"
-#include <iostream>
+const std::string key = vx::plugin::state_key(context);
+// key = session_id + ":" + operation_id
+```
 
-int main() {
-    MyPlugin::Initialize();
-    
-    const char* request = R"({
-        "jsonrpc": "2.0",
-        "method": "tools/call",
-        "params": {
-            "name": "my_tool",
-            "arguments": {"param1": "test"}
-        },
-        "id": "1"
-    })";
-    
-    char* response = MyPlugin::HandleRequest(request);
-    std::cout << response << std::endl;
-    free(response);
-    
-    MyPlugin::Shutdown();
-    return 0;
+`team_design` 和 `dag_control` 都按这个键隔离状态。若 Plugin 保存进程内状态，必须用互斥锁保护，因为 MCP Server 会通过固定 worker pool 并发调用不同工具。
+
+## 文件工具规则
+
+涉及 Session 文件时，优先扩展现有 `workspace_fs`，不要在其他 Plugin 重复实现路径解析。安全要求包括：
+
+- 参数只接受相对路径；
+- 拒绝绝对路径、`..`、空字节和根目录操作；
+- 不跟随任意路径组件中的软链接；
+- 覆盖写使用同目录临时文件和原子重命名；
+- 检查单文件和 Session 总配额；
+- 递归删除必须由显式参数触发。
+
+不要接受模型传入的宿主路径，也不要自行拼接项目根目录。
+
+## CMake
+
+创建 `mcp_server/plugins/example_tools/CMakeLists.txt`：
+
+```cmake
+add_library(example_tools SHARED ExampleTools.cpp)
+set_target_properties(example_tools PROPERTIES
+    PREFIX ""
+    OUTPUT_NAME "example_tools"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/mcp_server/plugins"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/mcp_server/plugins"
+)
+target_include_directories(example_tools PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/src/interface
+)
+```
+
+然后在 `mcp_server/CMakeLists.txt` 中加入：
+
+```cmake
+add_subdirectory(plugins/example_tools)
+```
+
+## 配置 Actor 可见性
+
+在 `config/tool_orchestration.json` 的目标 Actor 列表中加入 Plugin ID。例如仅允许 Planner 使用：
+
+```json
+{
+  "schema_version": 1,
+  "modes": {
+    "dag_team": {
+      "actors": {
+        "designer": ["team_design", "workspace_fs", "web_research"],
+        "planner": ["dag_control", "example_tools", "workspace_fs", "web_research"],
+        "executor": ["workspace_fs", "web_research"]
+      }
+    }
+  },
+  "permission": "allow"
 }
 ```
 
-## 发布清单
+候选工具严格来自这份映射。不要增加语义检索、RAG 或 Top-K 选择层。
 
-- [ ] 插件名称唯一
-- [ ] 版本号正确
-- [ ] 所有工具有描述
-- [ ] 输入参数有 JSON Schema
-- [ ] 错误处理完善
-- [ ] 内存无泄漏
-- [ ] 线程安全
-- [ ] 文档完整
-- [ ] 测试通过
+## 测试清单
+
+新增 Plugin 至少应覆盖：
+
+- Manifest、版本、Tool ID/name 和 Schema 可被 Registry 加载；
+- 未授权 actor 在 `tools/list` 中看不到并且 `tools/call` 无法执行；
+- 缺字段、错误类型、额外字段和领域非法参数返回结构化错误；
+- 并发调用不会串状态；
+- 输出满足 Schema 和大小限制；
+- 审计不包含正文或密钥；
+- 若涉及文件，覆盖遍历、软链接、配额、原子覆盖和递归操作；
+- 若涉及网络，使用本地 fixture 覆盖重定向、状态码、超时、编码和大小上限。
+
+构建和运行：
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --target example_tools mcp_server -j$(nproc)
+ctest --test-dir build --output-on-failure
+```

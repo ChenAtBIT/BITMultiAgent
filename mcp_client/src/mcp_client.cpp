@@ -144,7 +144,25 @@ bool MCPClient::isConnected() const {
     return connected_;
 }
 
-std::vector<MCPTool> MCPClient::listTools() {
+namespace {
+
+Json::Value contextJson(const ToolExecutionContext& context) {
+    Json::Value value;
+    value["session_id"] = context.session_id;
+    value["operation_id"] = context.operation_id;
+    value["mode_id"] = context.mode_id;
+    value["actor_kind"] = context.actor_kind;
+    value["actor_id"] = context.actor_id;
+    Json::Value trusted;
+    Json::Reader reader;
+    value["trusted_data"] = reader.parse(context.trusted_data, trusted)
+        ? trusted : Json::Value(Json::objectValue);
+    return value;
+}
+
+}  // namespace
+
+std::vector<MCPTool> MCPClient::listTools(const ToolExecutionContext& context) {
     std::vector<MCPTool> tools;
     
     if (!connected_) {
@@ -154,14 +172,19 @@ std::vector<MCPTool> MCPClient::listTools() {
     
     MCPRequest request;
     request.method = "tools/list";
-    request.id = "list_tools_" + std::to_string(std::time(nullptr));
+    request.id = nextRequestId("list_tools");
+    Json::Value params;
+    params["context"] = contextJson(context);
+    Json::StreamWriterBuilder writer;
+    writer["indentation"] = "";
+    request.params = Json::writeString(writer, params);
     
     if (!sendRequest(request)) {
         LOG_ERROR("Failed to send tools/list request");
         return tools;
     }
     
-    MCPResponse response = receiveResponse();
+    MCPResponse response = receiveResponse(request.id);
     if (response.is_error) {
         LOG_ERROR("Error listing tools: " + response.error);
         return tools;
@@ -176,8 +199,11 @@ std::vector<MCPTool> MCPClient::listTools() {
             for (const auto& tool : tools_array) {
                 MCPTool mcp_tool;
                 mcp_tool.name = tool["name"].asString();
+                mcp_tool.tool_id = tool["toolId"].asString();
+                mcp_tool.plugin_id = tool["pluginId"].asString();
                 mcp_tool.description = tool["description"].asString();
                 mcp_tool.input_schema = tool["inputSchema"].toStyledString();
+                mcp_tool.output_schema = tool["outputSchema"].toStyledString();
                 tools.push_back(mcp_tool);
             }
         }
@@ -188,7 +214,9 @@ std::vector<MCPTool> MCPClient::listTools() {
     return tools;
 }
 
-MCPResponse MCPClient::callTool(const std::string& tool_name, const std::string& arguments) {
+MCPResponse MCPClient::callTool(const ToolExecutionContext& context,
+                                const std::string& tool_name,
+                                const std::string& arguments) {
     MCPResponse response;
     response.is_error = true;
     response.error = "Not connected";
@@ -200,19 +228,20 @@ MCPResponse MCPClient::callTool(const std::string& tool_name, const std::string&
     
     MCPRequest request;
     request.method = "tools/call";
-    request.id = "call_tool_" + std::to_string(std::time(nullptr));
+    request.id = nextRequestId("call_tool");
     
     // 构建参数
     Json::Value params;
     params["name"] = tool_name;
+    params["context"] = contextJson(context);
     
     Json::Value args_json;
     Json::Reader reader;
-    if (reader.parse(arguments, args_json)) {
-        params["arguments"] = args_json;
-    } else {
-        params["arguments"] = Json::Value(Json::objectValue);
+    if (!reader.parse(arguments, args_json) || !args_json.isObject()) {
+        response.error = "Tool arguments must be a valid JSON object";
+        return response;
     }
+    params["arguments"] = args_json;
     
     // 只设置 params 部分，不要包含 method 和 id
     Json::StreamWriterBuilder builder;
@@ -225,7 +254,7 @@ MCPResponse MCPClient::callTool(const std::string& tool_name, const std::string&
         return response;
     }
     
-    response = receiveResponse();
+    response = receiveResponse(request.id, std::max(30000, config_.request_timeout_ms));
     if (response.is_error) {
         LOG_ERROR("Error calling tool " + tool_name + ": " + response.error);
     } else {
@@ -245,14 +274,14 @@ std::vector<MCPPrompt> MCPClient::listPrompts() {
     
     MCPRequest request;
     request.method = "prompts/list";
-    request.id = "list_prompts_" + std::to_string(std::time(nullptr));
+    request.id = nextRequestId("list_prompts");
     
     if (!sendRequest(request)) {
         LOG_ERROR("Failed to send prompts/list request");
         return prompts;
     }
     
-    MCPResponse response = receiveResponse();
+    MCPResponse response = receiveResponse(request.id);
     if (response.is_error) {
         LOG_ERROR("Error listing prompts: " + response.error);
         return prompts;
@@ -291,7 +320,7 @@ MCPResponse MCPClient::getPrompt(const std::string& prompt_name, const std::stri
     
     MCPRequest request;
     request.method = "prompts/get";
-    request.id = "get_prompt_" + std::to_string(std::time(nullptr));
+    request.id = nextRequestId("get_prompt");
     
     // 构建参数
     Json::Value params;
@@ -318,7 +347,7 @@ MCPResponse MCPClient::getPrompt(const std::string& prompt_name, const std::stri
         return response;
     }
     
-    response = receiveResponse();
+    response = receiveResponse(request.id);
     if (response.is_error) {
         LOG_ERROR("Error getting prompt " + prompt_name + ": " + response.error);
     } else {
@@ -338,14 +367,14 @@ std::vector<MCPResource> MCPClient::listResources() {
     
     MCPRequest request;
     request.method = "resources/list";
-    request.id = "list_resources_" + std::to_string(std::time(nullptr));
+    request.id = nextRequestId("list_resources");
     
     if (!sendRequest(request)) {
         LOG_ERROR("Failed to send resources/list request");
         return resources;
     }
     
-    MCPResponse response = receiveResponse();
+    MCPResponse response = receiveResponse(request.id);
     if (response.is_error) {
         LOG_ERROR("Error listing resources: " + response.error);
         return resources;
@@ -385,7 +414,7 @@ MCPResponse MCPClient::readResource(const std::string& uri) {
     
     MCPRequest request;
     request.method = "resources/read";
-    request.id = "read_resource_" + std::to_string(std::time(nullptr));
+    request.id = nextRequestId("read_resource");
     
     // 构建参数
     Json::Value params;
@@ -404,7 +433,7 @@ MCPResponse MCPClient::readResource(const std::string& uri) {
         return response;
     }
     
-    response = receiveResponse();
+    response = receiveResponse(request.id);
     if (response.is_error) {
         LOG_ERROR("Error reading resource " + uri + ": " + response.error);
     } else {
@@ -436,22 +465,28 @@ bool MCPClient::sendRequestStdio(const MCPRequest& request) {
     std::string json_request = buildJSONRPCRequest(request);
     json_request += "\n";  // MCP协议使用换行符分隔消息
     
-    ssize_t written = write(stdin_pipe_, json_request.c_str(), json_request.length());
-    if (written != static_cast<ssize_t>(json_request.length())) {
-        LOG_ERROR("Failed to write request to MCP server");
-        return false;
+    std::lock_guard<std::mutex> lock(write_mutex_);
+    std::size_t offset = 0;
+    while (offset < json_request.size()) {
+        const ssize_t written = write(stdin_pipe_, json_request.data() + offset,
+                                      json_request.size() - offset);
+        if (written <= 0) {
+            LOG_ERROR("Failed to write request to MCP server");
+            return false;
+        }
+        offset += static_cast<std::size_t>(written);
     }
     
     return true;
 }
 
-MCPResponse MCPClient::receiveResponse() {
+MCPResponse MCPClient::receiveResponse(const std::string& request_id, int timeout_ms) {
+    if (transport_type_ == MCPTransportType::SSE) return receiveResponseSSE();
     std::unique_lock<std::mutex> lock(queue_mutex_);
-    
-    // 等待响应，最多等待30秒
-    if (queue_cv_.wait_for(lock, std::chrono::seconds(30), [this] { return !response_queue_.empty(); })) {
-        MCPResponse response = response_queue_.front();
-        response_queue_.pop();
+    if (queue_cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms),
+                           [this, &request_id] { return responses_by_id_.count(request_id) > 0; })) {
+        MCPResponse response = std::move(responses_by_id_.at(request_id));
+        responses_by_id_.erase(request_id);
         return response;
     }
     
@@ -518,8 +553,8 @@ void MCPClient::processNotificationsStdio() {
                     } else {
                         // 这是一个响应
                         std::lock_guard<std::mutex> lock(queue_mutex_);
-                        response_queue_.push(response);
-                        queue_cv_.notify_one();
+                        responses_by_id_[response.id] = std::move(response);
+                        queue_cv_.notify_all();
                     }
                 }
             }
@@ -633,6 +668,10 @@ std::string MCPClient::buildJSONRPCRequest(const MCPRequest& request) {
     Json::StreamWriterBuilder builder;
     builder["indentation"] = "";
     return Json::writeString(builder, root);
+}
+
+std::string MCPClient::nextRequestId(const std::string& prefix) {
+    return prefix + "_" + std::to_string(++request_counter_);
 }
 
 MCPResponse MCPClient::parseJSONRPCResponse(const std::string& response) {

@@ -25,10 +25,13 @@
 #ifndef MCP_SERVER_SERVER_H
 #define MCP_SERVER_SERVER_H
 
+#include <atomic>
+#include <cstddef>
 #include <memory>
 #include <queue>
 #include <thread>
 #include <condition_variable>
+#include <vector>
 #include "ITransport.h"
 #include "json.hpp"
 
@@ -69,6 +72,12 @@ namespace vx::mcp {
 
     private:
         void WriterLoop();
+        void StartToolWorkers();
+        void StopToolWorkers();
+        bool EnqueueToolCall(json request);
+        void ToolWorkerLoop();
+        void WriteResponse(const json& response);
+        void RejectToolCall(const json& request, const std::string& message);
         json HandleRequest(const json& request);
 
         json InitializeCmd(const json& request);
@@ -115,6 +124,13 @@ namespace vx::mcp {
 
         std::thread reader_thread_;
         std::atomic<bool> reader_running_ = false;
+        static constexpr std::size_t TOOL_WORKER_COUNT = 4;
+        static constexpr std::size_t MAX_TOOL_QUEUE_SIZE = 64;
+        std::mutex tool_queue_mutex_;
+        std::condition_variable tool_queue_cv_;
+        std::queue<json> tool_queue_;
+        std::vector<std::thread> tool_workers_;
+        bool tool_workers_running_ = false;
     };
 
 }

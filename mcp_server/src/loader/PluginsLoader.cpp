@@ -31,25 +31,23 @@ namespace vx::mcp {
         UnloadPlugins();
     }
 
-    bool PluginsLoader::LoadPlugins(const std::string& directory) {
+    bool PluginsLoader::LoadPlugins(const std::string& directory,
+                                    const std::vector<std::string>& plugin_ids) {
         try {
-            for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
-                if (entry.is_regular_file()) {
-                    std::string extension = entry.path().extension().string();
-
-                    // Check if this is a shared library
+            for (const auto& plugin_id : plugin_ids) {
+                std::filesystem::path path = std::filesystem::path(directory) / plugin_id;
 #ifdef _WIN32
-                    if (extension == ".dll")
+                path += ".dll";
 #else
-    #ifdef __APPLE__
-                    if (extension == ".dylib" || extension == ".so")
-    #else
-                    if (extension == ".so")
-    #endif
+#ifdef __APPLE__
+                path += ".dylib";
+#else
+                path += ".so";
 #endif
-                    {
-                        LoadPlugin(entry.path().string());
-                    }
+#endif
+                if (!std::filesystem::is_regular_file(path) || !LoadPlugin(path.string())) {
+                    LOG(ERROR) << "Failed to load configured plugin: " << path.string() << std::endl;
+                    return false;
                 }
             }
             return true;
@@ -60,7 +58,7 @@ namespace vx::mcp {
     }
 
     bool PluginsLoader::LoadPlugin(const std::string& path) {
-        PluginEntry entry;
+        PluginEntry entry{};
         entry.path = path;
 
         // Load the shared library
@@ -86,7 +84,7 @@ namespace vx::mcp {
         entry.createFunc = (PluginAPI * (*)())GetProcAddress(entry.handle, "CreatePlugin");
         entry.destroyFunc = (void (*)(PluginAPI *))GetProcAddress(entry.handle, "DestroyPlugin");
 #else
-        entry.handle = dlopen(path.c_str(), RTLD_LAZY); // 把共享库装进当前进程
+        entry.handle = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
         if (!entry.handle) {
             LOG(ERROR) << "Failed to load plugin: " << path << " - " << dlerror() << std::endl;
             return false;
@@ -111,10 +109,26 @@ namespace vx::mcp {
         }
 
         // Create plugin instance
-        entry.instance = entry.createFunc(); // 拿到 PluginAPI*
+        entry.instance = entry.createFunc();
+
+        if (!entry.instance || !entry.instance->GetApiVersion || !entry.instance->GetId ||
+            !entry.instance->GetName || !entry.instance->GetVersion ||
+            !entry.instance->Initialize || !entry.instance->Shutdown ||
+            !entry.instance->GetToolCount || !entry.instance->GetTool ||
+            !entry.instance->HandleToolCall || !entry.instance->FreeResult ||
+            entry.instance->GetApiVersion() != MCP_PLUGIN_API_VERSION) {
+            LOG(ERROR) << "Plugin API version mismatch: " << path << std::endl;
+            if (entry.instance) entry.destroyFunc(entry.instance);
+#ifdef _WIN32
+            FreeLibrary(entry.handle);
+#else
+            dlclose(entry.handle);
+#endif
+            return false;
+        }
 
         // Initialize the plugin
-        if (!entry.instance->Initialize()) {
+        if (!entry.instance->Initialize || !entry.instance->Initialize()) {
             LOG(ERROR) << "Plugin initialization failed: " << path << std::endl;
             entry.destroyFunc(entry.instance);
 
@@ -145,7 +159,7 @@ namespace vx::mcp {
     void PluginsLoader::UnloadPlugin(PluginEntry& entry) {
         if (entry.instance) {
             // Shutdown the plugin
-            entry.instance->Shutdown();
+            if (entry.instance->Shutdown) entry.instance->Shutdown();
 
             // Destroy the plugin instance
             entry.destroyFunc(entry.instance);

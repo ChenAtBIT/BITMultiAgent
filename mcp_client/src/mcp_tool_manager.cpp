@@ -26,11 +26,8 @@ bool MCPToolManager::initialize() {
         return false;
     }
     
-    // 刷新可用工具列表
-    refreshTools();
-    
     initialized_ = true;
-    LOG_INFO("MCP tool manager initialized with " + std::to_string(available_tools_.size()) + " tools");
+    LOG_INFO("MCP tool manager initialized");
     return true;
 }
 
@@ -39,25 +36,52 @@ void MCPToolManager::shutdown() {
         return;
     }
     
-    std::lock_guard<std::mutex> lock(tools_mutex_);
-    available_tools_.clear();
-    tool_map_.clear();
     initialized_ = false;
+    {
+        std::lock_guard<std::mutex> lock(tools_cache_mutex_);
+        tools_cache_.clear();
+    }
     
     LOG_INFO("MCP tool manager shutdown");
 }
 
-std::vector<MCPTool> MCPToolManager::getAvailableTools() const {
-    std::lock_guard<std::mutex> lock(tools_mutex_);
-    return available_tools_;
+std::string MCPToolManager::cacheKeyForContext(const ToolExecutionContext& context) {
+    return context.mode_id + "\n" + context.actor_kind;
 }
 
-bool MCPToolManager::isToolAvailable(const std::string& tool_name) const {
-    std::lock_guard<std::mutex> lock(tools_mutex_);
-    return tool_map_.find(tool_name) != tool_map_.end();
+std::vector<MCPTool> MCPToolManager::toolsForContext(const ToolExecutionContext& context) const {
+    if (!initialized_ || !mcp_client_) return {};
+    const auto key = cacheKeyForContext(context);
+    {
+        std::lock_guard<std::mutex> lock(tools_cache_mutex_);
+        const auto found = tools_cache_.find(key);
+        if (found != tools_cache_.end()) return found->second;
+    }
+
+    auto tools = mcp_client_->listTools(context);
+    if (!tools.empty()) {
+        std::lock_guard<std::mutex> lock(tools_cache_mutex_);
+        const auto [it, inserted] = tools_cache_.emplace(key, tools);
+        if (!inserted) return it->second;
+    }
+    return tools;
 }
 
-MCPResponse MCPToolManager::executeTool(const std::string& tool_name, const std::string& arguments) {
+std::vector<MCPTool> MCPToolManager::getAvailableTools(const ToolExecutionContext& context) const {
+    return toolsForContext(context);
+}
+
+bool MCPToolManager::isToolAvailable(const ToolExecutionContext& context,
+                                     const std::string& tool_name) const {
+    const auto tools = toolsForContext(context);
+    return std::any_of(tools.begin(), tools.end(), [&](const MCPTool& tool) {
+        return tool.name == tool_name || tool.tool_id == tool_name;
+    });
+}
+
+MCPResponse MCPToolManager::executeTool(const ToolExecutionContext& context,
+                                        const std::string& tool_name,
+                                        const std::string& arguments) {
     if (!initialized_) {
         MCPResponse error_response;
         error_response.is_error = true;
@@ -65,7 +89,7 @@ MCPResponse MCPToolManager::executeTool(const std::string& tool_name, const std:
         return error_response;
     }
     
-    if (!isToolAvailable(tool_name)) {
+    if (!isToolAvailable(context, tool_name)) {
         MCPResponse error_response;
         error_response.is_error = true;
         error_response.error = "Tool not available: " + tool_name;
@@ -73,10 +97,11 @@ MCPResponse MCPToolManager::executeTool(const std::string& tool_name, const std:
     }
     
     LOG_INFO("Executing MCP tool: " + tool_name);
-    return mcp_client_->callTool(tool_name, arguments);
+    return mcp_client_->callTool(context, tool_name, arguments);
 }
 
-void MCPToolManager::executeToolAsync(const std::string& tool_name, 
+void MCPToolManager::executeToolAsync(const ToolExecutionContext& context,
+                                     const std::string& tool_name,
                                      const std::string& arguments,
                                      std::function<void(const MCPResponse&)> callback) {
     if (!initialized_) {
@@ -87,7 +112,7 @@ void MCPToolManager::executeToolAsync(const std::string& tool_name,
         return;
     }
     
-    if (!isToolAvailable(tool_name)) {
+    if (!isToolAvailable(context, tool_name)) {
         MCPResponse error_response;
         error_response.is_error = true;
         error_response.error = "Tool not available: " + tool_name;
@@ -96,35 +121,27 @@ void MCPToolManager::executeToolAsync(const std::string& tool_name,
     }
     
     // 在单独线程中执行工具调用
-    std::thread([this, tool_name, arguments, callback]() {
-        MCPResponse response = mcp_client_->callTool(tool_name, arguments);
+    std::thread([this, context, tool_name, arguments, callback]() {
+        MCPResponse response = mcp_client_->callTool(context, tool_name, arguments);
         callback(response);
     }).detach();
 }
 
-bool MCPToolManager::validateToolArguments(const std::string& tool_name, const std::string& arguments) const {
-    std::lock_guard<std::mutex> lock(tools_mutex_);
-    
-    auto it = tool_map_.find(tool_name);
-    if (it == tool_map_.end()) {
-        return false;
-    }
-    
-    const MCPTool& tool = it->second;
-    
+bool MCPToolManager::validateToolArguments(const MCPTool& tool,
+                                           const std::string& arguments) const {
     try {
         // 解析工具的参数schema
         Json::Value schema;
         Json::Reader reader;
         if (!reader.parse(tool.input_schema, schema)) {
-            LOG_WARN("Failed to parse tool schema for: " + tool_name);
+            LOG_WARN("Failed to parse tool schema for: " + tool.name);
             return false;
         }
         
         // 解析提供的参数
         Json::Value args;
         if (!reader.parse(arguments, args)) {
-            LOG_WARN("Invalid JSON arguments for tool: " + tool_name);
+            LOG_WARN("Invalid JSON arguments for tool: " + tool.name);
             return false;
         }
         
@@ -134,7 +151,7 @@ bool MCPToolManager::validateToolArguments(const std::string& tool_name, const s
             for (const auto& field : required) {
                 std::string field_name = field.asString();
                 if (!args.isMember(field_name)) {
-                    LOG_WARN("Missing required field '" + field_name + "' for tool: " + tool_name);
+                    LOG_WARN("Missing required field '" + field_name + "' for tool: " + tool.name);
                     return false;
                 }
             }
@@ -167,7 +184,7 @@ bool MCPToolManager::validateToolArguments(const std::string& tool_name, const s
                         }
                         
                         if (actual_type != expected_type) {
-                            LOG_WARN("Type mismatch for field '" + prop_name + "' in tool " + tool_name + 
+                            LOG_WARN("Type mismatch for field '" + prop_name + "' in tool " + tool.name +
                                    ": expected " + expected_type + ", got " + actual_type);
                             return false;
                         }
@@ -179,38 +196,13 @@ bool MCPToolManager::validateToolArguments(const std::string& tool_name, const s
         return true;
         
     } catch (const std::exception& e) {
-        LOG_ERROR("Error validating tool arguments for " + tool_name + ": " + e.what());
+        LOG_ERROR("Error validating tool arguments for " + tool.name + ": " + e.what());
         return false;
     }
 }
 
-void MCPToolManager::refreshTools() {
-    if (!mcp_client_ || !mcp_client_->isConnected()) {
-        LOG_ERROR("MCP client not connected, cannot refresh tools");
-        return;
-    }
-    
-    std::vector<MCPTool> tools = mcp_client_->listTools();
-    
-    std::lock_guard<std::mutex> lock(tools_mutex_);
-    available_tools_ = tools;
-    tool_map_.clear();
-    
-    for (const auto& tool : tools) {
-        tool_map_[tool.name] = tool;
-    }
-    
-    LOG_INFO("Refreshed " + std::to_string(tools.size()) + " MCP tools");
-}
-
 void MCPToolManager::processNotification(const std::string& plugin_name, const std::string& notification) {
     LOG_INFO("Received notification from plugin " + plugin_name + ": " + notification);
-    
-    // 如果通知表明工具列表已更改，刷新工具列表
-    if (notification.find("tools_changed") != std::string::npos ||
-        notification.find("tools_updated") != std::string::npos) {
-        refreshTools();
-    }
 }
 
 // MCPServiceIntegrator 实现
@@ -293,13 +285,6 @@ std::vector<std::string> MCPServiceIntegrator::getAvailableServices() const {
         return services;
     }
     
-    if (tool_manager_) {
-        auto tools = tool_manager_->getAvailableTools();
-        for (const auto& tool : tools) {
-            services.push_back("tool:" + tool.name);
-        }
-    }
-    
     if (mcp_client_) {
         auto prompts = mcp_client_->listPrompts();
         for (const auto& prompt : prompts) {
@@ -334,5 +319,3 @@ void MCPServiceIntegrator::setLogLevel(common::LogLevel level) {
 
 } // namespace mcp
 } // namespace agent_rpc
-
-

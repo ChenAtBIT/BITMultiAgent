@@ -104,6 +104,75 @@ namespace vx::mcp {
         LOG(INFO) << "Writer thread stopped." << std::endl;
     }
 
+    void Server::WriteResponse(const json& response) {
+        if (response == nullptr) return;
+        std::lock_guard<std::mutex> lock(output_mutex_);
+        if (transport_) transport_->Write(response.dump());
+    }
+
+    void Server::StartToolWorkers() {
+        std::lock_guard<std::mutex> lock(tool_queue_mutex_);
+        if (tool_workers_running_) return;
+        tool_workers_running_ = true;
+        for (std::size_t index = 0; index < TOOL_WORKER_COUNT; ++index) {
+            tool_workers_.emplace_back(&Server::ToolWorkerLoop, this);
+        }
+    }
+
+    void Server::StopToolWorkers() {
+        {
+            std::lock_guard<std::mutex> lock(tool_queue_mutex_);
+            tool_workers_running_ = false;
+        }
+        tool_queue_cv_.notify_all();
+        for (auto& worker : tool_workers_) {
+            if (worker.joinable() && worker.get_id() != std::this_thread::get_id()) worker.join();
+        }
+        tool_workers_.clear();
+        std::lock_guard<std::mutex> lock(tool_queue_mutex_);
+        std::queue<json> empty;
+        tool_queue_.swap(empty);
+    }
+
+    bool Server::EnqueueToolCall(json request) {
+        {
+            std::lock_guard<std::mutex> lock(tool_queue_mutex_);
+            if (!tool_workers_running_ || tool_queue_.size() >= MAX_TOOL_QUEUE_SIZE) return false;
+            tool_queue_.push(std::move(request));
+        }
+        tool_queue_cv_.notify_one();
+        return true;
+    }
+
+    void Server::ToolWorkerLoop() {
+        while (true) {
+            json request;
+            {
+                std::unique_lock<std::mutex> lock(tool_queue_mutex_);
+                tool_queue_cv_.wait(lock, [this] {
+                    return !tool_queue_.empty() || !tool_workers_running_;
+                });
+                if (!tool_workers_running_ && tool_queue_.empty()) return;
+                request = std::move(tool_queue_.front());
+                tool_queue_.pop();
+            }
+            try {
+                WriteResponse(HandleRequest(request));
+            } catch (const std::exception& error) {
+                LOG(ERROR) << "Concurrent tool call failed: " << error.what() << std::endl;
+                RejectToolCall(request, "tool execution failed");
+            }
+        }
+    }
+
+    void Server::RejectToolCall(const json& request, const std::string& message) {
+        std::string id;
+        if (request.contains("id")) {
+            id = request["id"].is_string() ? request["id"].get<std::string>() : request["id"].dump();
+        }
+        WriteResponse(MCPBuilder::Error(MCPBuilder::InternalError, id, message));
+    }
+
     bool Server::Connect(const std::shared_ptr<ITransport> &transport) {
         if (!transport) {
             LOG(ERROR) << "Connect called with null transport." << std::endl;
@@ -121,8 +190,10 @@ namespace vx::mcp {
         // Start transport (required for SSE; should be a no-op/true for stdio)
         if (!transport_->Start()) {
             LOG(ERROR) << "Failed to start transport: " << transport_->GetName() << std::endl;
+            Stop();
             return false;
         }
+        StartToolWorkers();
 
         while (!isStopping_) {
             auto [length, json_string] = transport->Read();
@@ -139,6 +210,10 @@ namespace vx::mcp {
                 LOG(DEBUG) << "Received: " << json_string << std::endl;
                 json request = json::parse(json_string);
                 parserErrors_ = 0; // reset parser error
+                if (request.value("method", "") == "tools/call") {
+                    if (!EnqueueToolCall(request)) RejectToolCall(request, "tool worker queue is full");
+                    continue;
+                }
                 json response = HandleRequest(request);
                 if (response != nullptr) {
                     std::lock_guard<std::mutex> lock(output_mutex_);
@@ -171,6 +246,7 @@ namespace vx::mcp {
         // Start the writer thread
         writer_running_ = true;
         writer_thread_ = std::thread(&Server::WriterLoop, this);
+        StartToolWorkers();
 
         // Start the async reader thread
         reader_running_ = true;
@@ -190,6 +266,11 @@ namespace vx::mcp {
                         LOG(DEBUG) << "Received: " << json_string << std::endl;
                         json request = json::parse(json_string);
                         parserErrors_ = 0;
+
+                        if (request.value("method", "") == "tools/call") {
+                            if (!EnqueueToolCall(request)) RejectToolCall(request, "tool worker queue is full");
+                            continue;
+                        }
 
                         json response = HandleRequest(request);
                         if (response != nullptr) {
@@ -223,6 +304,8 @@ namespace vx::mcp {
         isStopping_ = true; // 同时确保循环退出
 
         LOG(INFO) << "Stopping server..." << std::endl;
+
+        StopToolWorkers();
 
         // Stop transport (SSE shuts server down; stdio can no-op)
         if (transport_) {

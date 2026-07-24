@@ -1,4 +1,5 @@
 #include "ai_orchestrator/dag_runtime.hpp"
+#include "ai_orchestrator/session_manager.hpp"
 
 #include "httplib.h"
 
@@ -14,6 +15,7 @@ using ai_orchestrator::dag::AgentDefinition;
 using ai_orchestrator::dag::DagRuntime;
 using ai_orchestrator::dag::QwenChatModel;
 using ai_orchestrator::dag::RunOptions;
+using ai_orchestrator::dag::SessionManager;
 using ai_orchestrator::dag::json;
 
 namespace {
@@ -48,7 +50,7 @@ std::string read_file(const std::filesystem::path& path) {
 
 void cors(httplib::Response& response) {
     response.set_header("Access-Control-Allow-Origin", "*");
-    response.set_header("Access-Control-Allow-Headers", "Content-Type");
+    response.set_header("Access-Control-Allow-Headers", "Content-Type, X-Session-ID");
 }
 
 void send_json(httplib::Response& response, const json& value, int status = 200) {
@@ -61,11 +63,22 @@ json error_json(const std::string& message) {
     return {{"detail", message}};
 }
 
+std::string request_session(const httplib::Request& request) {
+    return request.get_header_value("X-Session-ID");
+}
+
 std::vector<std::string> string_array(const json& value) {
     std::vector<std::string> result;
     if (!value.is_array()) return result;
     for (const auto& item : value) if (item.is_string()) result.push_back(item.get<std::string>());
     return result;
+}
+
+json public_tool_json(const agent_rpc::mcp::ToolInfo& tool) {
+    return {{"name", tool.name},
+            {"tool_id", tool.tool_id},
+            {"plugin_id", tool.plugin_id},
+            {"description", tool.description}};
 }
 
 std::vector<AgentDefinition> parse_agents(const json& value) {
@@ -120,14 +133,41 @@ int main(int argc, char** argv) {
     if (static_dir.empty()) static_dir = AGENT_DAG_WEB_ROOT;
     std::filesystem::path log_directory = environment("DAG_LOG_DIR");
     if (log_directory.empty()) log_directory = std::filesystem::path(AGENT_DAG_PROJECT_ROOT) / "log";
+    std::filesystem::path sessions_directory = environment("DAG_SESSIONS_DIR");
+    if (sessions_directory.empty()) sessions_directory = std::filesystem::path(AGENT_DAG_PROJECT_ROOT) / "sessions";
+    std::filesystem::path mcp_server_path = environment("MCP_SERVER_PATH");
+    if (mcp_server_path.empty()) mcp_server_path = std::filesystem::path(AGENT_DAG_BUILD_ROOT) / "mcp_server/mcp_server";
+    std::filesystem::path plugins_directory = environment("MCP_PLUGINS_DIR");
+    if (plugins_directory.empty()) plugins_directory = std::filesystem::path(AGENT_DAG_BUILD_ROOT) / "mcp_server/plugins";
+    std::filesystem::path tool_config = environment("TOOL_CONFIG_PATH");
+    if (tool_config.empty()) tool_config = AGENT_DAG_TOOL_CONFIG;
 
     try {
+        SessionManager sessions(sessions_directory);
+        std::filesystem::create_directories(log_directory / "mcp");
+        agent_rpc::mcp::MCPAgentConfig mcp_config;
+        mcp_config.enable_mcp = true;
+        mcp_config.mcp_server_path = mcp_server_path.string();
+        mcp_config.max_retry_count = 0;
+        mcp_config.mcp_args = {"-p", plugins_directory.string(),
+                               "-c", tool_config.string(),
+                               "--sessions-root", sessions.root().string(),
+                               "-l", (log_directory / "mcp").string()};
+        auto tools = std::make_shared<agent_rpc::mcp::MCPAgentIntegration>();
+        if (!tools->initialize(mcp_config)) {
+            throw std::runtime_error("cannot initialize required MCP tool runtime");
+        }
         auto model = std::make_shared<QwenChatModel>(api_key,
                                                        environment("QWEN_MODEL", "qwen-plus"),
                                                        endpoint_from_environment());
-        DagRuntime runtime(model, log_directory);
+        DagRuntime runtime(model, tools, log_directory);
         httplib::Server server;
         server.set_error_handler([&](const httplib::Request& request, httplib::Response& response) {
+            if (!response.body.empty()) return;
+            if (response.status != 404) {
+                cors(response);
+                return;
+            }
             if (request.path == "/") {
                 response.status = 200;
                 cors(response);
@@ -159,53 +199,90 @@ int main(int argc, char** argv) {
             try { response.status = 200; cors(response); response.set_content(read_file(index_path), "text/html; charset=utf-8"); }
             catch (const std::exception& error) { send_json(response, error_json(error.what()), 500); }
         });
-        if (!server.set_mount_point("/static", static_dir.string().c_str())) {
-            throw std::runtime_error("cannot mount static directory: " + static_dir.string());
-        }
-        if (!server.set_mount_point("/", static_dir.string().c_str())) {
-            throw std::runtime_error("cannot mount root static directory: " + static_dir.string());
+        const auto static_assets = static_dir / "static";
+        if (!server.set_mount_point("/static", static_assets.string().c_str())) {
+            throw std::runtime_error("cannot mount static directory: " + static_assets.string());
         }
 
-        server.Get("/health", [](const httplib::Request&, httplib::Response& response) {
-            send_json(response, {{"status", "ok"}, {"service", "agent-dag-orchestrator"}});
+        server.Get("/health", [tools](const httplib::Request&, httplib::Response& response) {
+            send_json(response, {{"status", tools->isAvailable() ? "ok" : "error"},
+                                 {"service", "agent-dag-orchestrator"},
+                                 {"tools", tools->getStatusDescription()}},
+                      tools->isAvailable() ? 200 : 503);
         });
         server.Get("/api/settings", [](const httplib::Request&, httplib::Response& response) {
             send_json(response, {{"default_planner", "dashscope"}, {"model", environment("QWEN_MODEL", "qwen-plus")},
                                  {"server_api_key_configured", true}});
+        });
+        server.Post("/api/sessions", [&](const httplib::Request&, httplib::Response& response,
+                                          const httplib::ContentReader&) {
+            try {
+                const auto session_id = sessions.create();
+                send_json(response, {{"session_id", session_id}});
+            } catch (const std::exception& error) {
+                send_json(response, error_json(error.what()), 500);
+            }
+        });
+        server.Get(R"(/api/sessions/([a-f0-9]{32}))", [&](const httplib::Request& request, httplib::Response& response) {
+            const auto session_id = request.matches[1].str();
+            if (!sessions.resume(session_id)) send_json(response, error_json("Unknown session_id"), 404);
+            else send_json(response, {{"session_id", session_id}, {"status", "ready"}});
         });
         server.Get("/api/agents", [&](const httplib::Request&, httplib::Response& response) {
             json result = json::array();
             for (const auto& agent : runtime.agents()) result.push_back(agent.public_json());
             send_json(response, {{"agents", result}});
         });
+        server.Get("/api/agents/tools", [&](const httplib::Request& request, httplib::Response& response) {
+            const auto session_id = request_session(request);
+            if (!sessions.exists(session_id)) {
+                send_json(response, error_json("Valid X-Session-ID is required"), 401);
+                return;
+            }
+            if (!tools->isAvailable()) {
+                send_json(response, error_json("MCP tool runtime is unavailable"), 503);
+                return;
+            }
+
+            json agents = json::object();
+            json executor_tools = json::array();
+            for (const auto& agent : runtime.agents()) {
+                agent_rpc::mcp::ToolExecutionContext context;
+                context.session_id = session_id;
+                context.operation_id = "agent_tools_" + agent.id;
+                context.mode_id = "dag_team";
+                context.actor_kind = "executor";
+                context.actor_id = agent.id;
+                context.trusted_data = "{}";
+
+                json available = json::array();
+                for (const auto& tool : tools->getAvailableTools(context)) {
+                    available.push_back(public_tool_json(tool));
+                }
+                agents[agent.id] = available;
+                if (executor_tools.empty()) executor_tools = available;
+            }
+            send_json(response, {{"agents", agents},
+                                 {"executor_tools", executor_tools},
+                                 {"tools", executor_tools}});
+        });
         server.Post("/api/agents/draft", [&](const httplib::Request& request, httplib::Response& response) {
             try {
+                const auto session_id = request_session(request);
+                if (!sessions.exists(session_id)) { send_json(response, error_json("Valid X-Session-ID is required"), 401); return; }
                 const auto body = json::parse(request.body);
                 const std::string task = body.value("user_input", "");
                 const int max_agents = body.value("max_dynamic_agents", 6);
                 const auto references = string_array(body.value("reference_materials", json::array()));
-                const auto prompt = ai_orchestrator::dag::build_agent_design_prompt(max_agents, references);
-                const std::vector<ai_orchestrator::dag::ChatMessage> messages = {
-                    {"system", prompt}, {"user", task}
-                };
-                std::string raw;
-                try {
-                    raw = model->complete(messages, 0.35);
-                    runtime.log_chat_exchange("agent_designer.log", "agent_design_draft", "", "",
-                                              0, 0.35, messages, raw);
-                } catch (const std::exception& error) {
-                    runtime.log_chat_exchange("agent_designer.log", "agent_design_draft", "", "",
-                                              0, 0.35, messages, {}, error.what());
-                    std::cerr << "[DAG] Agent draft failed, using fallback: " << error.what() << std::endl;
-                }
-                const auto agents = ai_orchestrator::dag::parse_agent_design(raw, task, max_agents);
+                const auto agents = runtime.draft_agents(session_id, task, max_agents, references);
                 json result = json::array();
                 for (const auto& agent : agents) result.push_back(agent.public_json());
                 send_json(response, {{"agents", result}, {"blueprints", result}});
-            } catch (const std::exception& error) { send_json(response, error_json(error.what()), 400); }
+            } catch (const std::exception& error) { send_json(response, error_json(error.what()), 422); }
         });
-        server.Post("/api/materials/parse", [](const httplib::Request& request, httplib::Response& response) {
+        server.Post("/api/materials/parse", [&](const httplib::Request& request, httplib::Response& response) {
             try {
+                if (!sessions.exists(request_session(request))) { send_json(response, error_json("Valid X-Session-ID is required"), 401); return; }
                 const auto body = json::parse(request.body);
                 const std::string filename = body.value("filename", "material.txt");
                 const auto dot = filename.rfind('.');
@@ -219,8 +296,11 @@ int main(int argc, char** argv) {
         });
         server.Post("/api/runs", [&](const httplib::Request& request, httplib::Response& response) {
             try {
+                const auto session_id = request_session(request);
+                if (!sessions.exists(session_id)) { send_json(response, error_json("Valid X-Session-ID is required"), 401); return; }
                 const auto body = json::parse(request.body);
                 RunOptions options;
+                options.session_id = session_id;
                 options.user_input = body.value("user_input", "");
                 options.auto_agents = body.value("agent_mode", "manual") == "auto";
                 options.max_dynamic_agents = body.value("max_dynamic_agents", 6);
@@ -243,16 +323,21 @@ int main(int argc, char** argv) {
             } catch (const std::exception& error) { send_json(response, error_json(error.what()), 400); }
         });
         server.Get(R"(/api/runs/([^/]+))", [&](const httplib::Request& request, httplib::Response& response) {
-            const auto result = runtime.snapshot(request.matches[1]);
+            const auto session_id = request_session(request);
+            if (!sessions.exists(session_id)) { send_json(response, error_json("Valid X-Session-ID is required"), 401); return; }
+            const auto result = runtime.snapshot(session_id, request.matches[1]);
             if (result.is_null() || result.empty()) send_json(response, error_json("Unknown run_id"), 404);
             else send_json(response, result);
         });
         server.Post(R"(/api/runs/([^/]+)/agents/([^/]+)/retry)", [&](const httplib::Request& request, httplib::Response& response) {
             try {
+                const auto session_id = request_session(request);
+                if (!sessions.exists(session_id)) { send_json(response, error_json("Valid X-Session-ID is required"), 401); return; }
                 const auto body = json::parse(request.body.empty() ? "{}" : request.body);
                 const auto run_id = request.matches[1].str();
                 const auto agent_id = request.matches[2].str();
-                const bool accepted = runtime.retry_agent(run_id, agent_id, body.value("edited_prior", ""), body.value("user_feedback", ""));
+                const bool accepted = runtime.retry_agent(run_id, session_id, agent_id,
+                    body.value("edited_prior", ""), body.value("user_feedback", ""));
                 if (!accepted) send_json(response, error_json("Unknown run_id or agent_id"), 404);
                 else send_json(response, {{"run_id", run_id}, {"agent_id", agent_id}, {"status", "retry_started"}});
             } catch (const std::exception& error) { send_json(response, error_json(error.what()), 400); }

@@ -2,7 +2,11 @@ const state = {
   agents: [],
   generatedAgents: [],
   agentsById: {},
+  toolsByAgentId: {},
+  executorTools: [],
+  agentToolsError: null,
   runId: null,
+  sessionId: null,
   snapshot: null,
   pollTimer: null,
   renderedEventSeq: 0,
@@ -13,6 +17,9 @@ const eventTypes = [
   "agents_designed",
   "plan_created",
   "skills_activated",
+  "tool_started",
+  "tool_completed",
+  "tool_failed",
   "node_queued",
   "node_entered",
   "node_exited",
@@ -48,13 +55,16 @@ const elements = {
 };
 
 async function init() {
-  const [agentsResponse, settingsResponse] = await Promise.all([
+  await ensureSession();
+  const [agentsResponse, settingsResponse, toolsResponse] = await Promise.all([
     fetch("/api/agents"),
     fetch("/api/settings"),
+    sessionFetch("/api/agents/tools"),
   ]);
   const data = await agentsResponse.json();
   state.agents = data.agents;
   state.agentsById = Object.fromEntries(state.agents.map((agent) => [agent.id, agent]));
+  await applyAgentToolsResponse(toolsResponse);
   if (settingsResponse.ok) {
     applyServerSettings(await settingsResponse.json());
   }
@@ -72,9 +82,50 @@ async function init() {
   renderAgentMode();
 }
 
+async function ensureSession() {
+  const stored = sessionStorage.getItem("dag_session_id");
+  if (stored) {
+    const resumed = await fetch(`/api/sessions/${encodeURIComponent(stored)}`);
+    if (resumed.ok) {
+      state.sessionId = stored;
+      return;
+    }
+    sessionStorage.removeItem("dag_session_id");
+  }
+  const response = await fetch("/api/sessions", { method: "POST" });
+  if (!response.ok) throw new Error("Session creation failed");
+  const data = await response.json();
+  state.sessionId = data.session_id;
+  sessionStorage.setItem("dag_session_id", state.sessionId);
+}
+
+function sessionFetch(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  headers.set("X-Session-ID", state.sessionId);
+  return fetch(url, { ...options, headers });
+}
+
 function applyServerSettings(settings) {
   const model = settings.model || "qwen-plus";
   setStatus("idle", `Ready · ${model}`);
+}
+
+async function applyAgentToolsResponse(response) {
+  if (!response.ok) {
+    state.agentToolsError = "Tool list unavailable";
+    return;
+  }
+  try {
+    const data = await response.json();
+    state.toolsByAgentId = data.agents && typeof data.agents === "object" ? data.agents : {};
+    state.executorTools = Array.isArray(data.executor_tools)
+      ? data.executor_tools
+      : (Array.isArray(data.tools) ? data.tools : []);
+    state.agentToolsError = null;
+  } catch (error) {
+    state.agentToolsError = "Tool list unavailable";
+    console.warn("Agent tool list parsing failed", error);
+  }
 }
 
 function renderAgentPicker() {
@@ -87,7 +138,20 @@ function renderAgentPicker() {
   }
 
   elements.agentPicker.innerHTML = agents
-    .map((agent, index) => `
+    .map((agent, index) => {
+      const tools = getAgentTools(agent);
+      const toolList = tools.length
+        ? `<ul class="agent-tools-list">${tools
+            .map((tool) => {
+              const normalizedTool = typeof tool === "string" ? { name: tool } : (tool || {});
+              const label = normalizedTool.name || normalizedTool.tool_id || "Unnamed tool";
+              const plugin = normalizedTool.plugin_id ? `<small>${escapeHtml(normalizedTool.plugin_id)}</small>` : "";
+              const description = normalizedTool.description ? ` title="${escapeHtml(normalizedTool.description)}"` : "";
+              return `<li${description}><span>${escapeHtml(label)}</span>${plugin}</li>`;
+            })
+            .join("")}</ul>`
+        : `<div class="agent-tools-empty">${escapeHtml(state.agentToolsError || "No tools available / 暂无可用工具")}</div>`;
+      return `
         <article class="agent-toggle" data-agent-index="${index}">
           <div class="agent-toggle-head">
             <label>
@@ -118,13 +182,20 @@ function renderAgentPicker() {
               <textarea class="agent-reference-input" rows="3" placeholder="Only this agent can read these materials / 仅当前 Agent 可读取">${escapeHtml((agent.reference_materials || []).join("\\n\\n---\\n\\n"))}</textarea>
             </label>
           </div>
+          <section class="agent-tools" aria-label="Tools / 工具">
+            <div class="agent-tools-head">
+              <span>Tools / 工具</span>
+              <strong>${tools.length}</strong>
+            </div>
+            ${toolList}
+          </section>
           <div class="agent-file-row">
             <input class="agent-file-input" type="file" accept=".md,.markdown,.txt" multiple />
             <small class="agent-upload-status">MD, TXT</small>
           </div>
         </article>
-      `,
-    )
+      `;
+    })
     .join("");
 
   elements.agentPicker.querySelectorAll(".agent-toggle").forEach((card) => {
@@ -174,7 +245,7 @@ async function appendAgentFileMaterials(card, index) {
   for (const file of files) {
     try {
       const contentBase64 = await fileToBase64(file);
-      const response = await fetch("/api/materials/parse", {
+      const response = await sessionFetch("/api/materials/parse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: file.name, content_base64: contentBase64 }),
@@ -214,6 +285,14 @@ function addAgent() {
   });
   rebuildAgentsById();
   renderAgentPicker();
+}
+
+function getAgentTools(agent) {
+  if (Array.isArray(agent?.tools)) return agent.tools;
+  if (agent?.id && Array.isArray(state.toolsByAgentId[agent.id])) {
+    return state.toolsByAgentId[agent.id];
+  }
+  return state.executorTools;
 }
 
 function rebuildAgentsById() {
@@ -258,7 +337,7 @@ async function startRun() {
   stopPolling();
   state.renderedEventSeq = 0;
 
-  const response = await fetch("/api/runs", {
+  const response = await sessionFetch("/api/runs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -291,7 +370,7 @@ async function generateAgentDrafts() {
   setStatus("running", "Generating");
   elements.generateAgentsButton.disabled = true;
   try {
-    const response = await fetch("/api/agents/draft", {
+    const response = await sessionFetch("/api/agents/draft", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -331,7 +410,7 @@ function stopPolling() {
 
 async function pollRun(runId) {
   try {
-    const response = await fetch(`/api/runs/${runId}`);
+    const response = await sessionFetch(`/api/runs/${runId}`);
     if (!response.ok) throw new Error("run status request failed");
     state.snapshot = await response.json();
     (state.snapshot.events || [])
@@ -535,7 +614,7 @@ function renderOutputs() {
     card.querySelector(".retry-button").addEventListener("click", async () => {
       const editedPrior = card.querySelector("textarea").value;
       const userFeedback = card.querySelector("input").value;
-      await fetch(`/api/runs/${state.runId}/agents/${agentId}/retry`, {
+      await sessionFetch(`/api/runs/${state.runId}/agents/${agentId}/retry`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ edited_prior: editedPrior, user_feedback: userFeedback }),

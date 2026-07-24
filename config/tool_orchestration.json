@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "modes": {
+    "dag_team": {
+      "actors": {
+        "designer": ["team_design", "workspace_fs", "web_research"],
+        "planner": ["dag_control", "workspace_fs", "web_research"],
+        "executor": ["workspace_fs", "web_research"]
+      }
+    }
+  },
+  "permission": "allow"
+}

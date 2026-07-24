@@ -9,6 +9,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <queue>
+#include <unordered_map>
 #include <atomic>
 #include "agent_rpc/common/logger.h"
 
@@ -21,11 +22,23 @@ enum class MCPTransportType {
     SSE         // Server-Sent Events（HTTP 远程）
 };
 
+struct ToolExecutionContext {
+    std::string session_id;
+    std::string operation_id;
+    std::string mode_id = "dag_team";
+    std::string actor_kind;
+    std::string actor_id;
+    std::string trusted_data = "{}";
+};
+
 // MCP工具定义
 struct MCPTool {
     std::string name;
+    std::string tool_id;
+    std::string plugin_id;
     std::string description;
     std::string input_schema;  // JSON schema
+    std::string output_schema;
 };
 
 // MCP提示定义
@@ -86,8 +99,10 @@ public:
     virtual MCPTransportType getTransportType() const = 0;
     
     // 工具相关
-    virtual std::vector<MCPTool> listTools() = 0;
-    virtual MCPResponse callTool(const std::string& tool_name, const std::string& arguments) = 0;
+    virtual std::vector<MCPTool> listTools(const ToolExecutionContext& context) = 0;
+    virtual MCPResponse callTool(const ToolExecutionContext& context,
+                                 const std::string& tool_name,
+                                 const std::string& arguments) = 0;
     
     // 提示相关
     virtual std::vector<MCPPrompt> listPrompts() = 0;
@@ -115,8 +130,10 @@ public:
     MCPTransportType getTransportType() const override;
     
     // 工具相关
-    std::vector<MCPTool> listTools() override;
-    MCPResponse callTool(const std::string& tool_name, const std::string& arguments) override;
+    std::vector<MCPTool> listTools(const ToolExecutionContext& context) override;
+    MCPResponse callTool(const ToolExecutionContext& context,
+                         const std::string& tool_name,
+                         const std::string& arguments) override;
     
     // 提示相关
     std::vector<MCPPrompt> listPrompts() override;
@@ -132,7 +149,8 @@ public:
 private:
     // 内部通信（通用）
     bool sendRequest(const MCPRequest& request);
-    MCPResponse receiveResponse();
+    MCPResponse receiveResponse(const std::string& request_id,
+                                int timeout_ms = 30000);
     void processNotifications();
     
     // STDIO 模式
@@ -153,6 +171,7 @@ private:
     // 消息处理
     std::string buildJSONRPCRequest(const MCPRequest& request);
     MCPResponse parseJSONRPCResponse(const std::string& response);
+    std::string nextRequestId(const std::string& prefix);
     
     // 配置
     MCPConnectionConfig config_;
@@ -177,9 +196,12 @@ private:
     std::thread sse_event_thread_;      // SSE 事件监听线程
     
     // 消息队列
-    std::queue<MCPResponse> response_queue_;
+    std::unordered_map<std::string, MCPResponse> responses_by_id_;
+    std::queue<MCPResponse> response_queue_;  // SSE transport compatibility.
     std::mutex queue_mutex_;
     std::condition_variable queue_cv_;
+    std::mutex write_mutex_;
+    std::atomic<std::uint64_t> request_counter_{0};
     
     // 通知回调
     std::function<void(const std::string&, const std::string&)> notification_callback_;
@@ -200,30 +222,36 @@ public:
     void shutdown();
     
     // 工具管理
-    std::vector<MCPTool> getAvailableTools() const;
-    bool isToolAvailable(const std::string& tool_name) const;
+    std::vector<MCPTool> getAvailableTools(const ToolExecutionContext& context) const;
+    bool isToolAvailable(const ToolExecutionContext& context,
+                         const std::string& tool_name) const;
     
     // 工具调用
-    MCPResponse executeTool(const std::string& tool_name, const std::string& arguments);
+    MCPResponse executeTool(const ToolExecutionContext& context,
+                            const std::string& tool_name,
+                            const std::string& arguments);
     
     // 异步工具调用
-    void executeToolAsync(const std::string& tool_name, 
+    void executeToolAsync(const ToolExecutionContext& context,
+                         const std::string& tool_name,
                          const std::string& arguments,
                          std::function<void(const MCPResponse&)> callback);
     
     // 工具验证
-    bool validateToolArguments(const std::string& tool_name, const std::string& arguments) const;
+    bool validateToolArguments(const MCPTool& tool,
+                               const std::string& arguments) const;
 
     // 内部方法（供 MCPServiceIntegrator 使用）
-    void refreshTools();
     void processNotification(const std::string& plugin_name, const std::string& notification);
 
 private:
+    std::vector<MCPTool> toolsForContext(const ToolExecutionContext& context) const;
+    static std::string cacheKeyForContext(const ToolExecutionContext& context);
+
     std::shared_ptr<IMCPClient> mcp_client_;
-    std::vector<MCPTool> available_tools_;
-    std::map<std::string, MCPTool> tool_map_;
-    mutable std::mutex tools_mutex_;
     std::atomic<bool> initialized_{false};
+    mutable std::mutex tools_cache_mutex_;
+    mutable std::map<std::string, std::vector<MCPTool>> tools_cache_;
 };
 
 // MCP服务集成器
@@ -260,4 +288,3 @@ private:
 
 } // namespace mcp
 } // namespace agent_rpc
-

@@ -13,6 +13,9 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <utility>
+
+#include "agent_rpc/mcp/mcp_agent_integration.h"
 
 namespace ai_orchestrator::dag {
 
@@ -63,16 +66,41 @@ struct SkillActivation {
     json public_json() const;
 };
 
+struct ModelToolCall {
+    std::string id;
+    std::string name;
+    std::string arguments;
+};
+
 struct ChatMessage {
     std::string role;
     std::string content;
+    std::string tool_call_id;
+    std::vector<ModelToolCall> tool_calls;
+
+    ChatMessage() = default;
+    ChatMessage(std::string role_value,
+                std::string content_value,
+                std::string tool_call_id_value = {},
+                std::vector<ModelToolCall> tool_calls_value = {})
+        : role(std::move(role_value)),
+          content(std::move(content_value)),
+          tool_call_id(std::move(tool_call_id_value)),
+          tool_calls(std::move(tool_calls_value)) {}
+};
+
+struct ModelResponse {
+    std::string content;
+    std::vector<ModelToolCall> tool_calls;
+    std::string finish_reason;
 };
 
 class ChatModel {
 public:
     virtual ~ChatModel() = default;
-    virtual std::string complete(const std::vector<ChatMessage>& messages,
-                                 double temperature) = 0;
+    virtual ModelResponse complete(const std::vector<ChatMessage>& messages,
+                                   double temperature,
+                                   const json& tools = json::array()) = 0;
 };
 
 class QwenChatModel final : public ChatModel {
@@ -83,8 +111,9 @@ public:
                                "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions");
     ~QwenChatModel() override;
 
-    std::string complete(const std::vector<ChatMessage>& messages,
-                         double temperature) override;
+    ModelResponse complete(const std::vector<ChatMessage>& messages,
+                           double temperature,
+                           const json& tools = json::array()) override;
 
 private:
     std::string api_key_;
@@ -94,11 +123,12 @@ private:
 
 class LambdaChatModel final : public ChatModel {
 public:
-    using Handler = std::function<std::string(const std::vector<ChatMessage>&, double)>;
+    using Handler = std::function<ModelResponse(const std::vector<ChatMessage>&, double, const json&)>;
 
     explicit LambdaChatModel(Handler handler);
-    std::string complete(const std::vector<ChatMessage>& messages,
-                         double temperature) override;
+    ModelResponse complete(const std::vector<ChatMessage>& messages,
+                           double temperature,
+                           const json& tools = json::array()) override;
 
 private:
     Handler handler_;
@@ -124,6 +154,7 @@ std::vector<PlanItem> parse_plan(
     const std::string& user_input);
 
 struct RunOptions {
+    std::string session_id;
     std::string user_input;
     std::vector<AgentDefinition> agents;
     std::vector<std::string> reference_materials;
@@ -139,7 +170,11 @@ struct RunOptions {
 class DagRuntime {
 public:
     explicit DagRuntime(std::shared_ptr<ChatModel> model,
+                        std::shared_ptr<agent_rpc::mcp::MCPAgentIntegration> tools = nullptr,
                         std::filesystem::path log_directory = {});
+    DagRuntime(std::shared_ptr<ChatModel> model,
+               std::filesystem::path log_directory)
+        : DagRuntime(std::move(model), nullptr, std::move(log_directory)) {}
 
     std::vector<AgentDefinition> agents() const;
     void set_default_agents(std::vector<AgentDefinition> agents);
@@ -156,14 +191,27 @@ public:
                            double temperature,
                            const std::vector<ChatMessage>& messages,
                            const std::string& response = {},
-                           const std::string& error = {}) const;
+                           const std::string& error = {},
+                           int model_iteration = 0) const;
 
     std::string create_run(RunOptions options);
-    json snapshot(const std::string& run_id) const;
+    std::vector<AgentDefinition> draft_agents(const std::string& session_id,
+                                              const std::string& user_input,
+                                              int max_agents,
+                                              const std::vector<std::string>& references);
+    json snapshot(const std::string& session_id, const std::string& run_id) const;
+    json snapshot(const std::string& run_id) const { return snapshot({}, run_id); }
     bool retry_agent(const std::string& run_id,
+                     const std::string& session_id,
                      const std::string& agent_id,
                      const std::string& edited_prior,
                      const std::string& user_feedback);
+    bool retry_agent(const std::string& run_id,
+                     const std::string& agent_id,
+                     const std::string& edited_prior,
+                     const std::string& user_feedback) {
+        return retry_agent(run_id, {}, agent_id, edited_prior, user_feedback);
+    }
 
 private:
     struct RunState;
@@ -182,12 +230,30 @@ private:
                           const PlanItem& node,
                           const AgentDefinition& agent,
                           const std::vector<SkillActivation>& skills);
+    struct ToolLoopResult {
+        std::string content;
+        json committed = json();
+    };
+    struct ToolLoopLogContext {
+        std::string log_file;
+        std::string phase;
+        std::string run_id;
+        std::string agent_id;
+        int round = 0;
+    };
+    ToolLoopResult run_tool_loop(const std::shared_ptr<RunState>& state,
+                                 const agent_rpc::mcp::ToolExecutionContext& context,
+                                 std::vector<ChatMessage> messages,
+                                 double temperature,
+                                 const std::string& commit_tool,
+                                 const ToolLoopLogContext& log_context);
     void emit(const std::shared_ptr<RunState>& state,
               const std::string& type,
               const std::string& title,
               json payload = json::object()) const;
 
     std::shared_ptr<ChatModel> model_;
+    std::shared_ptr<agent_rpc::mcp::MCPAgentIntegration> tools_integration_;
     std::vector<AgentDefinition> default_agents_;
     std::vector<SkillSpec> skills_;
     std::filesystem::path log_directory_;

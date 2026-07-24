@@ -5,12 +5,6 @@ set(MCP_SOURCES
     src/mcp_client.cpp
     src/mcp_tool_manager.cpp
     src/mcp_agent_integration.cpp
-    # RAG-MCP 源文件
-    src/rag/embedding_service.cpp
-    src/rag/embedding_cache.cpp
-    src/rag/vector_index.cpp
-    src/rag/tool_retriever.cpp
-    src/rag/tool_validator.cpp
 )
 
 # 创建MCP库

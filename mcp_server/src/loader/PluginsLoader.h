@@ -60,7 +60,8 @@ namespace vx::mcp {
         ~PluginsLoader();
 
         // Load plugins from a directory
-        bool LoadPlugins(const std::string& directory);
+        bool LoadPlugins(const std::string& directory,
+                         const std::vector<std::string>& plugin_ids);
 
         // Unload all plugins
         void UnloadPlugins();

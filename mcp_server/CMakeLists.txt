@@ -26,8 +26,20 @@ set(SOURCES
     src/transport/StdioTransport.cpp
     src/transport/HttpStreamTransport.cpp
     src/transport/SseTransport.cpp
-    src/loader/PluginsLoader.cpp
 )
+
+add_library(mcp_tool_runtime STATIC
+    src/loader/PluginsLoader.cpp
+    src/tool/ToolRegistry.cpp
+)
+set_target_properties(mcp_tool_runtime PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(mcp_tool_runtime PUBLIC
+    include
+    src
+    src/interface
+    libs_tier_01/aixlog-1.5.0/include
+)
+target_link_libraries(mcp_tool_runtime PUBLIC Threads::Threads)
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -40,14 +52,14 @@ target_include_directories(${PROJECT_NAME} PRIVATE
         ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads)
+target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads mcp_tool_runtime)
 
 # Link platform-specific libraries
 if(WIN32)
     # Windows Sockets library is required on Windows
     target_link_libraries(${PROJECT_NAME} PRIVATE ws2_32)
 else()
-    target_link_libraries(${PROJECT_NAME} PRIVATE ${CMAKE_DL_LIBS})
+    target_link_libraries(mcp_tool_runtime PUBLIC ${CMAKE_DL_LIBS})
     # On POSIX systems (Linux, macOS), standard socket functions are
     # typically part of the standard C library (libc) and usually
     # don't require explicit linking.
@@ -66,13 +78,7 @@ if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 # Example Plugins
-add_subdirectory(plugins/weather)
-add_subdirectory(plugins/sleep)
-add_subdirectory(plugins/code-review)
-add_subdirectory(plugins/bacio-quote)
-add_subdirectory(plugins/notification)
-add_subdirectory(plugins/calculator)
-add_subdirectory(plugins/tutorial_echo)
-add_subdirectory(plugins/server_observer)
-add_subdirectory(plugins/meeting_file_tools)
-add_subdirectory(plugins/knowledge_base_tools)
+add_subdirectory(plugins/team_design)
+add_subdirectory(plugins/dag_control)
+add_subdirectory(plugins/workspace_fs)
+add_subdirectory(plugins/web_research)

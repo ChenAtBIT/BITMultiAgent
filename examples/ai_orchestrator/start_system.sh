@@ -17,11 +17,15 @@ if [[ -z "${QWEN_API_KEY:-}" ]]; then
   exit 2
 fi
 
-if [[ ! -x "$BIN" ]]; then
-  echo "[1/2] 构建 ai_orchestrator..."
+if [[ ! -f "$BUILD_DIR/CMakeCache.txt" ]]; then
+  echo "[1/2] 配置项目..."
   cmake -S "$PROJECT_ROOT" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Debug
-  cmake --build "$BUILD_DIR" --target ai_orchestrator -j"${JOBS:-$(nproc)}"
 fi
+
+echo "[1/2] 构建 Web、MCP Server 和四个核心 Plugin..."
+cmake --build "$BUILD_DIR" --target \
+  ai_orchestrator mcp_server team_design dag_control workspace_fs web_research \
+  -j"${JOBS:-$(nproc)}"
 
 if [[ -f "$PID_FILE" ]] && kill -0 "$(<"$PID_FILE")" 2>/dev/null; then
   echo "ai_orchestrator 已在运行，PID=$(<"$PID_FILE")"
@@ -33,7 +37,7 @@ if [[ -e "$LOG_DIR" && ! -d "$LOG_DIR" ]]; then
   echo "错误: 日志路径不是目录: $LOG_DIR" >&2
   exit 1
 fi
-mkdir -p "$LOG_DIR"
+mkdir -p "$LOG_DIR" "$RUNTIME_DIR"
 # A new start owns a fresh log set. Keep the directory itself so its path is
 # stable, but remove all files and subdirectories from the previous run.
 find "$LOG_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +

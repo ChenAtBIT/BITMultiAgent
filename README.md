@@ -59,6 +59,9 @@
 - **过程可见**：DAG 图、Plan JSON、事件流、节点状态、Agent 输出都会展示在前端。
 - **支持 Retry**：用户可以编辑某个子 Agent 的输出，然后只重跑这个 Agent。
 - **ReAct**：每个 LLM Agent 内部可以多轮 Thought / Action / Observation / Answer，默认最多 5 轮。
+- **工具编排**：每个 Agent 的完整候选工具分别由 mode/actor 决定，运行时 Gateway 二次校验参数和权限。
+
+
 <!-- - **每轮会抽取记忆**：ReAct 每轮结束后先压缩一份关键记忆，再传给下一轮，避免上下文越塞越长。 -->
 
 ## 🧩 三、核心流程
@@ -122,7 +125,20 @@ Thought -> Action -> Observation -> Answer
 
 <img width="100%" alt="DAG 编排" src="docs/pic/ReAct.png" />
 
-## 🖥️ 四、演示台
+## 😀 四、工具编排
+每个 Agent 的完整候选工具分别由 mode/actor 决定，运行时 Gateway 二次校验参数和权限。
+
+```text
+Plugin 注册
+  -> mode/actor 配置过滤
+  -> 构建当前 ToolView
+  -> 向模型注入全部候选 Tool Schema
+  -> 模型返回 tool_calls
+  -> Gateway 再次校验归属、参数和权限
+  -> Plugin 执行及输出校验
+```
+
+## 🖥️ 五、演示台
 
 前端是原生 HTML/CSS/JS，没有 React/Vite 构建链。
 
@@ -137,7 +153,7 @@ Thought -> Action -> Observation -> Answer
 7. ReAct 最大轮次设置
 8. Agent 输出和 Retry
 
-## 🗂️ 五、项目结构
+## 🗂️ 六、项目结构
 ```text
 .
 ├── common/                         # MCP 使用的通用日志组件
@@ -152,9 +168,7 @@ Thought -> Action -> Observation -> Answer
 └── docs/                           # MCP 文档、提示词和演示资料
 ```
 
-## ⚙️ 六、快速开始
-
-## 启动
+## ⚙️ 七、快速启动
 
 ```bash
 export QWEN_API_KEY=sk-your-key
@@ -172,30 +186,8 @@ export QWEN_API_URL=https://your-compatible-endpoint/compatible-mode/v1
 
 启动脚本会自动配置/构建 `build`，并只启动一个 Web 进程。运行日志统一位于项目根目录的 `log/`：`service.log` 保存 Web/DAG 命令行日志，`agent_<agent_id>.log` 保存对应 Agent 的 ReAct 对话，`planner.log` 和 `agent_designer.log` 保存 Planner/Agent Designer 的模型请求。每次启动脚本时会清空并重新创建 `log/` 内容；服务已在运行时不会清空当前日志。
 
-## Web API
 
-- `GET /health`：健康检查。
-- `GET /api/agents`：读取默认 Agent 池。
-- `POST /api/agents/draft`：根据任务生成可编辑 Agent 草稿。
-- `POST /api/runs`：创建 DAG 运行。
-- `GET /api/runs/{run_id}`：轮询运行状态、Plan、事件和输出。
-- `POST /api/runs/{run_id}/agents/{agent_id}/retry`：携带编辑后的输出和反馈重跑单节点。
-- `POST /api/materials/parse`：解析 MD/TXT 的 base64 文本资料。
-
-前端不接收 API Key。模型配置从进程环境读取，运行快照会隐藏资料原文和密钥。
-
-## 测试
-
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build -j$(nproc)
-ctest --test-dir build --output-on-failure
-```
-
-`tests/test_dag_orchestrator.cpp` 使用注入的确定性模型，不访问网络，也不需要 API Key。
-
-
-## 🔍 七、项目 TODO
+## 🔍 八、项目 TODO
 
 目前项目已经能跑通“动态编排 -> DAG 调度 -> 并发执行 -> 事件观察 -> 人工 Retry”这条主线。后续更值得补的是这些：
 
@@ -205,8 +197,6 @@ ctest --test-dir build --output-on-failure
 2. **前端优化**  
    当前前端优先保证可读、可改、可演示。后续可以加强 DAG 画布交互、节点详情、长输出折叠、上传资料管理、错误提示和移动端布局，让它更像一个真正可用的工作台。
 
-3. **支持可人工检测的内容生成**  
-   后续每个 Agent 的输出不只是一段文本，还可以带上依据、引用材料、风险点、检查项和人工确认状态。用户可以先检查关键结论，再决定是否进入最终汇总。
 
 ## 📄 License
 

@@ -1,122 +1,156 @@
-# DAG-MultiAgent
+# 构建与运行说明
 
-一个动态 DAG Multi Agent 编排框架。系统根据用户任务生成 Agent 池和依赖计划，在单进程内并发执行依赖已满足的节点，并通过 Web 工作台展示完整执行过程。
+项目默认同时构建 DAG Web 服务、MCP Client、MCP Server 和四个核心 C++ Plugin。工具运行时是生产链路的必需部分，不提供旧 Plugin、RAG 工具检索或无工具降级开关。
+
+## 依赖
+
+- CMake 3.20+
+- 支持 C++20 的编译器
+- libcurl
+- jsoncpp
+- GoogleTest
+- RapidCheck
+- iconv（可选；用于非 UTF-8 网页字符集转换）
 
 
-## 核心流程
+## 四个核心 Plugin
 
-```text
-Browser
-  -> HTTP API
-  -> Agent Designer：生成任务级 Agent 草稿
-  -> Planner：生成 agent_id / subtask / depends_on
-  -> DAG Runtime：校验依赖与环
-  -> Ready Nodes：同批异步并发执行
-  -> ReAct Agent：Thought / Action / Observation / Answer
-  -> Run Snapshot：计划、事件、状态与输出
+| Plugin | Actor | 工具 |
+| --- | --- | --- |
+| `team_design` | Designer | `list_team`、`add_agent`、`update_agent`、`remove_agent`、`commit_team` |
+| `dag_control` | Planner | `list_plan`、`add_node`、`update_node`、`remove_node`、`validate_plan`、`commit_plan` |
+| `workspace_fs` | Designer、Planner、Executor | 文件和目录的受限 CRUD、移动与文本替换 |
+| `web_research` | Designer、Planner、Executor | `web_search`、`fetch_webpage` |
+
+内部 Tool ID 使用 `plugin_id.tool_name`，例如 `workspace_fs.read_file`；注入模型时使用兼容函数名 `workspace_fs__read_file`。Registry 保存并校验二者映射。
+
+默认映射位于 [`config/tool_orchestration.json`](config/tool_orchestration.json)：
+
+```json
+{
+  "schema_version": 1,
+  "modes": {
+    "dag_team": {
+      "actors": {
+        "designer": ["team_design", "workspace_fs", "web_research"],
+        "planner": ["dag_control", "workspace_fs", "web_research"],
+        "executor": ["workspace_fs", "web_research"]
+      }
+    }
+  },
+  "permission": "allow"
+}
 ```
 
-- Agent Designer 根据任务生成 3～10 个临时 Agent，也支持用户手动维护 Agent 池。
-- Planner 根据 Agent 池生成串行、并行或混合 DAG。
-- Runtime 过滤未知/重复节点，检查非法依赖和环，并对无法推进的运行产生 `run_stalled` 事件。
-- 同一批依赖已满足的节点通过 `std::async` 并发执行；下游节点只接收自身声明的上游输出。
-- 每个节点最多执行 1～10 轮结构化 ReAct，默认 5 轮。
+配置中出现未知 Plugin、重复映射、非法 Schema 或 `ask/deny` 时，MCP Server 启动失败，不会降级成无工具模式。
 
-## Web 工作台
+## Session 与工作区
 
-前端使用原生 HTML/CSS/JavaScript，无额外前端构建链。页面支持：
+页面首次打开时调用 `POST /api/sessions`，服务端生成 128 位随机 Session ID。前端将 ID 存入 `sessionStorage`；同一页面的多个 Run 复用它，页面刷新时通过 `GET /api/sessions/{id}` 恢复。
 
-- 自动生成或手动编辑 Agent 池；
-- 添加任务级公共资料和 Agent 级私有资料；
-- 展示 DAG、Plan JSON、节点状态、事件流和输出；
-- 编辑节点上一版输出并携带反馈单独 Retry；
-- 每 400 ms 轮询 Run Snapshot，刷新运行状态。
+默认目录：
 
-私有资料只注入指定 Agent。公开 Run Snapshot 仅返回每个 Agent 的私有资料数量，不返回原文。
+```text
+sessions/<session_id>/
+├── workspace/   # workspace_fs 唯一可访问根目录
+├── artifacts/
+└── audit/       # tools.jsonl，只记录脱敏元数据
+```
 
-<p align="center">
-  <img src="./docs/pic/Shows.gif" alt="DAG Multi Agent 演示" width="700" />
-</p>
+所有工具路径必须是相对路径。`workspace_fs` 拒绝绝对路径、`..`、空字节、工作区根删除和软链接穿越；写入使用同目录临时文件和原子重命名。默认限制为单文件 1 MiB、Session 工作区 100 MiB、目录列举 1000 项。
 
-## 保留的扩展模块
+`web_research` 使用 C++ 和 libcurl。只允许 HTTP(S)，保持 TLS 校验并限制重定向、超时、响应大小和输出长度。首版明确允许公网、localhost、私网和链路本地地址。网页结果标记为 `untrusted_web_content`。
 
-### MCP
+Session 目录首版不自动清理。
 
-`mcp_client/` 和 `mcp_server/` 作为独立能力保留：
+## 模型工具循环
 
-- MCP Client 支持 STDIO、SSE、工具发现和工具调用；
-- RAG-MCP 支持 Embedding 缓存、向量索引、Top-K 工具检索和工具校验；
-- MCP Server 支持运行时动态库插件加载；
-- 当前包含计算、服务器巡检、会议文件、知识库等插件。
+- Qwen Chat Completions 请求携带当前 ToolView 的完整 `tools`。
+- 标准 `tool_calls` 按模型返回顺序执行，响应通过 `tool` message 回传模型。
+- 单轮最多进行 8 次工具迭代；工具错误作为结构化结果反馈，模型可以修正参数。
+- Designer 必须调用 `team_design__commit_team`，Planner 必须调用 `dag_control__commit_plan`。
+- Designer/Planner 首次未提交或提交非法时使用全新 operation 重试一次；第二次失败产生 `run_stalled`。
+- 动态业务 Agent 始终映射为可信 `executor`，不使用用户可编辑的 `role` 文本授权。
 
-这些能力当前不在 DAG Runtime 的执行链路中，后续将通过明确的工具适配层接入 ReAct Agent。
+运行事件包含 `tool_started`、`tool_completed` 和 `tool_failed`。Session 审计记录 Tool ID、可信 Actor、脱敏路径或 URL、耗时和结果大小，不记录文件正文、网页正文、搜索词或密钥。
 
-### 分层记忆管理器
+模型往返日志写入 `log/agent_designer.log`、`log/planner.log` 和 `log/agent_<id>.log`；工具循环的每次迭代都会记录，便于定位未提交、参数修正和迭代上限问题。该诊断日志与 Session 下的脱敏工具审计相互独立。
 
-`orchestrator/` 当前只保留 `ContextMemoryManager`：
+## 构建与启动
 
-- 即时工作上下文按 Token 预算保留最近消息；
-- 较早消息通过可注入的 LLM 回调压缩为短期摘要；
-- 从摘要中提取长期核心记忆并按 `context_id` 持久化为 JSON；
-- 具备上下文 ID 文件名净化、记忆去重和 LLM 失败保护。
+依赖 CMake 3.20+、C++20、libcurl、jsoncpp、GoogleTest 和 RapidCheck。
 
-该管理器已独立构建和测试，但尚未接入 DAG Runtime。
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build -j$(nproc)
+ctest --test-dir build --output-on-failure
+```
 
-## 构建
+启动 Web、MCP Server 和四个 Plugin：
 
-环境需要 CMake 3.20+、支持 C++20 的编译器，以及 CURL、jsoncpp、SQLite3、GoogleTest 和 RapidCheck。
+```bash
+export QWEN_API_KEY=sk-your-key
+./examples/ai_orchestrator/start_system.sh
+```
+
+默认地址为 `http://127.0.0.1:8000`。停止服务：
+
+```bash
+./examples/ai_orchestrator/stop_system.sh
+```
+
+可用环境变量：
+
+| 变量 | 用途 |
+| --- | --- |
+| `QWEN_API_KEY` | 必需的模型 API Key |
+| `QWEN_API_URL` / `QWEN_BASE_URL` | 兼容 Chat Completions 的地址 |
+| `QWEN_MODEL` | 模型名，默认 `qwen-plus` |
+| `PORT` | Web 端口，默认 `8000` |
+| `MCP_SERVER_PATH` | MCP Server 可执行文件 |
+| `MCP_PLUGINS_DIR` | 四个 `.so` 所在目录 |
+| `TOOL_CONFIG_PATH` | 工具映射 JSON |
+| `DAG_SESSIONS_DIR` | Session 根目录 |
+| `BING_SEARCH_URL` | Bing 搜索入口，默认 `https://cn.bing.com/search` |
+
+核心 Plugin 或配置加载失败时 `/health` 不会进入可用状态，Web 服务启动也会失败。
+
+## Web API
+
+- `POST /api/sessions`：创建页面 Session。
+- `GET /api/sessions/{id}`：验证并恢复 Session。
+- `GET /health`：检查 Web 和 MCP 工具运行时。
+- `GET /api/agents`：读取默认 Agent Pool。
+- `POST /api/agents/draft`：通过 Designer 工具生成草稿。
+- `POST /api/materials/parse`：解析 MD/TXT 文本资料。
+- `POST /api/runs`：创建 DAG Run。
+- `GET /api/runs/{run_id}`：获取属于当前 Session 的 Run Snapshot。
+- `POST /api/runs/{run_id}/agents/{agent_id}/retry`：重跑当前 Session 的单个节点。
+
+除 Session 创建/恢复和静态接口外，动态 API 都要求 `X-Session-ID`。跨 Session 查询和 Retry 返回拒绝结果。
+
+## 完整构建
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j$(nproc)
 ```
 
-只构建 DAG Web 主程序：
+核心目标：
 
 ```bash
-cmake --build build --target ai_orchestrator -j$(nproc)
+cmake --build build --target \
+  ai_orchestrator mcp_server team_design dag_control workspace_fs web_research \
+  -j$(nproc)
 ```
 
-如暂时不需要构建 MCP Server 及插件：
+仅在开发独立模块时可以关闭 MCP Server 构建：
 
 ```bash
-cmake -S . -B build -DDAG_MULTI_AGENT_BUILD_MCP_SERVER=OFF
+cmake -S . -B build-no-server -DDAG_MULTI_AGENT_BUILD_MCP_SERVER=OFF
 ```
 
-## 启动 DAG Web 服务
-
-```bash
-export QWEN_API_KEY=sk-your-key
-export QWEN_API_URL=https://your-compatible-endpoint/compatible-mode/v1
-./examples/ai_orchestrator/start_system.sh
-```
-
-默认访问 `http://127.0.0.1:8000`。`QWEN_API_URL` 可填写兼容 Chat Completions 的 base URL 或完整 `/chat/completions` URL；可以通过 `QWEN_MODEL` 和 `PORT` 修改模型及监听端口。
-
-停止服务：
-
-```bash
-./examples/ai_orchestrator/stop_system.sh
-```
-
-日志位于项目根目录 `log/`：
-
-- `service.log`：HTTP 服务和 DAG Runtime 日志；
-- `agent_designer.log`：Agent Designer 模型交互；
-- `planner.log`：Planner 模型交互；
-- `agent_<agent_id>.log`：对应 Agent 的 ReAct 交互。
-
-## Web API
-
-- `GET /health`：健康检查；
-- `GET /api/agents`：获取默认 Agent 池；
-- `POST /api/agents/draft`：生成可编辑 Agent 草稿；
-- `POST /api/materials/parse`：解析 MD/TXT 资料；
-- `POST /api/runs`：创建 DAG Run；
-- `GET /api/runs/{run_id}`：获取 Run Snapshot；
-- `POST /api/runs/{run_id}/agents/{agent_id}/retry`：重跑单个节点。
-
-API Key 只从服务端环境变量读取，不下发到浏览器。
+这种构建不能启动生产 Web 服务，因为 `ai_orchestrator` 启动时要求 MCP Server 和四个核心 Plugin 可用。
 
 ## 测试
 
@@ -124,13 +158,22 @@ API Key 只从服务端环境变量读取，不下发到浏览器。
 ctest --test-dir build --output-on-failure
 ```
 
-当前测试范围包括：
+测试覆盖 DAG/Retry、Session 恢复与隔离、Registry/Schema/角色过滤、文件路径安全、Plugin commit、MCP 并发 request ID，以及基于本地 HTTP Server 的网页抓取、重定向、字符集、Bing fixture、超时和响应上限。测试不访问真实搜索引擎。
 
-- DAG 依赖执行、计划降级、环检测、节点 Retry 和私有资料隔离；
-- ReAct 日志与非法 UTF-8 输入保护；
-- MCP Client、工具管理及异常降级；
-- RAG-MCP 向量索引、缓存、检索和校验；
-- 分层记忆压缩、长期记忆持久化和上下文隔离。
+## 启动
 
-DAG 测试使用注入的确定性模型，不访问外部模型接口。
+```bash
+export QWEN_API_KEY=sk-your-key
+./examples/ai_orchestrator/start_system.sh
+```
 
+脚本会构建 Web、MCP Server 和四个 Plugin，然后启动 Web 服务。环境覆盖项包括 `MCP_SERVER_PATH`、`MCP_PLUGINS_DIR`、`TOOL_CONFIG_PATH`、`DAG_SESSIONS_DIR` 和 `BING_SEARCH_URL`。
+
+默认运行路径：
+
+```text
+build/mcp_server/mcp_server
+build/mcp_server/plugins/{team_design,dag_control,workspace_fs,web_research}.so
+config/tool_orchestration.json
+sessions/<session_id>/{workspace,artifacts,audit}
+```
